@@ -49,11 +49,12 @@ export function resolveApiKeyFromAuthProfile(
   api: { config?: unknown },
   providerKey: string,
   logger?: PluginLogger,
+  _loadSdkOverride?: () => ProviderAuthSdk | undefined,
 ): string | undefined {
   try {
     // Lazily load the SDK subpath so a missing export on older OpenClaw
     // versions degrades gracefully instead of crashing module load.
-    const sdk = loadProviderAuthSdk();
+    const sdk = _loadSdkOverride ? _loadSdkOverride() : loadProviderAuthSdk();
     if (!sdk) return undefined;
 
     const { ensureAuthProfileStore, listProfilesForProvider, resolveOpenClawAgentDir } = sdk;
