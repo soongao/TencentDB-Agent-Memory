@@ -1,5 +1,6 @@
 /**
  * L2 Response Parser — extracts MMD generation results from LLM output.
+ * 中文：L2响应解析器——从LLM输出中提取MMD生成结果。
  */
 import { extractJson, extractMermaidFromFence } from "./json-utils.js";
 
@@ -28,11 +29,14 @@ interface RawL2Response {
 /**
  * Parse L2 LLM response into structured L2 result.
  * Returns null if parsing fails completely.
+ * 中文：将L2 LLM响应解析为结构化的L2结果。
+ * 如果解析完全失败，则返回null。
  */
 export function parseL2Response(raw: string): L2ParsedResponse | null {
   const parsed = extractJson<RawL2Response>(raw);
   if (!parsed || typeof parsed !== "object") {
     // Fallback: try extracting ```mermaid ... ``` code block (same as Go backend)
+    // 中文：回退：尝试提取```mermaid ... ```代码块（与Go后端相同）
     const mmd = extractMermaidFromFence(raw);
     if (mmd) {
       return { fileAction: "write", mmdContent: mmd, nodeMapping: {} };
@@ -43,18 +47,21 @@ export function parseL2Response(raw: string): L2ParsedResponse | null {
   const fileAction = parsed.file_action === "replace" ? "replace" : "write";
 
   // Extract mmd_content (may be wrapped in code fence)
+  // 中文：提取mmd_content（可能被代码围栏包裹）
   let mmdContent: string | undefined;
   if (fileAction === "write") {
     if (parsed.mmd_content) {
       mmdContent = extractMermaidFromFence(parsed.mmd_content) ?? parsed.mmd_content;
     } else {
       // mmd_content missing in write mode — try extracting from raw response
+      // 中文：写入模式中mmd_content缺失——尝试从原始响应中提取
       const fallbackMmd = extractMermaidFromFence(raw);
       if (fallbackMmd) mmdContent = fallbackMmd;
     }
   }
 
   // Parse replace_blocks
+  // 中文：解析replace_blocks
   let replaceBlocks: L2ParsedResponse["replaceBlocks"] | undefined;
   if (fileAction === "replace" && Array.isArray(parsed.replace_blocks)) {
     replaceBlocks = [];
@@ -66,6 +73,7 @@ export function parseL2Response(raw: string): L2ParsedResponse | null {
 
       let content = block.content ?? "";
       // Extract mermaid from fence if present
+      // 中文：如果存在，从围栏中提取mermaid
       const extracted = extractMermaidFromFence(content);
       if (extracted) content = extracted;
 
@@ -74,6 +82,7 @@ export function parseL2Response(raw: string): L2ParsedResponse | null {
   }
 
   // Parse node_mapping
+  // 中文：解析node_mapping
   const nodeMapping: Record<string, string> = {};
   if (parsed.node_mapping && typeof parsed.node_mapping === "object") {
     for (const [key, value] of Object.entries(parsed.node_mapping)) {

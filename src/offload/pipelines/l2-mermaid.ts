@@ -4,6 +4,10 @@
  * L2 is NO LONGER triggered directly from L1. Instead it runs independently:
  *   - Trigger condition A: offload.jsonl has >= l2NullThreshold entries with node_id=null
  *   - Trigger condition B: time since last L2 trigger exceeds l2TimeoutSeconds
+ * 中文：L2 Mermaid生成流水线（独立触发）:
+ * L2不再直接从L1触发。而是独立运行：
+ * - 触发条件A: offload.jsonl中有>= l2NullThreshold条目且node_id=null
+ * - 触发条件B: 自上次L2触发以来的时间超过l2TimeoutSeconds
  */
 import { PLUGIN_DEFAULTS, type OffloadEntry, type PluginConfig, type PluginLogger } from "../types.js";
 import {
@@ -92,6 +96,7 @@ function pickMmdDerivedFallbackNodeId(
 }
 
 // ─── L2 Independent Trigger Check ─────────────────────────────────────────────
+// 中文：─── L2 独立触发检查 ─────────────────────────────────────────────
 
 export async function checkL2Trigger(
   stateManager: OffloadStateManager,
@@ -119,6 +124,7 @@ export async function checkL2Trigger(
   const nowMs = Date.now();
 
   // Collect eligible null entries using boundary-based grouping
+  // 中文：使用边界基于分组收集符合条件的null条目
   const entriesByMmd = new Map<string, OffloadEntry[]>();
   let eligibleNullCount = 0;
 
@@ -128,6 +134,7 @@ export async function checkL2Trigger(
     if (entry.node_id !== null && entry.node_id !== "wait") continue;
 
     // For "wait" entries, only include if they exceeded retry timeout
+    // 中文：对于"等待"条目，仅包括如果它们超过了重试超时
     if (entry.node_id === "wait") {
       const tsIso = entry.timestamp;
       if (tsIso) {
@@ -137,10 +144,14 @@ export async function checkL2Trigger(
     }
 
     // Use boundary to determine which mmd this entry belongs to
+    // 中文：使用边界来确定该条目属于哪个mmd
     const boundary = stateManager.resolveEntryBoundary(i);
     if (!boundary) continue;                       // no boundary coverage → skip
+    // 中文：无边界覆盖 → 跳过
     if (boundary.result !== "long") continue;       // short task → skip
+    // 中文：短任务 → 跳过
     if (!boundary.targetMmd) continue;              // no target mmd → skip
+    // 中文：无目标mmd → 跳过
 
     if (entry.node_id === null) eligibleNullCount++;
 
@@ -148,6 +159,7 @@ export async function checkL2Trigger(
     let bucket = entriesByMmd.get(mmd);
     if (!bucket) { bucket = []; entriesByMmd.set(mmd, bucket); }
     // Dedup by tool_call_id within the same bucket
+    // 中文：在同一个桶内通过tool_call_id去重
     if (entry.tool_call_id && bucket.some((e) => e.tool_call_id === entry.tool_call_id)) continue;
     bucket.push(entry);
   }
@@ -159,6 +171,7 @@ export async function checkL2Trigger(
   }
 
   // Condition A: null count threshold
+  // 中文：条件A：null计数阈值
   if (eligibleNullCount >= nullThreshold) {
     return {
       shouldTrigger: true,
@@ -168,12 +181,14 @@ export async function checkL2Trigger(
   }
 
   // Condition B: timeout
+  // 中文：条件B：超时
   const lastL2Time = stateManager.getLastL2TriggerTime();
   if (lastL2Time) {
     const elapsed = (Date.now() - new Date(lastL2Time).getTime()) / 1000;
     if (elapsed >= timeoutSeconds) {
       if (timeNeedsNewOffload) {
         // Check if any null entry is newer than last L2
+        // 中文：检查是否有空条目比上次L2更新
         const nullEntries = allEntries.filter((e) => e.node_id === null && !isHeartbeatEntry(e));
         if (!hasNullEntryAfterLastL2(nullEntries, lastL2Time) && totalEligible === eligibleNullCount) {
           return { ...emptyResult, reason: "timeout but no new offload rows" };
@@ -187,6 +202,7 @@ export async function checkL2Trigger(
     }
   } else {
     // No prior L2: check retry-wait entries or oldest null age
+    // 中文：无先前L2：检查重试等待条目或最旧的空条目的年龄
     const hasRetryWait = totalEligible > eligibleNullCount;
     if (hasRetryWait) {
       return {
@@ -283,4 +299,5 @@ function getMostFrequent(arr: string[]): string | null {
 }
 
 // Local runL2Pipeline removed — all L2 processing goes through backend (index.ts → backendClient.l2Generate).
+// 中文：本地runL2Pipeline移除——所有L2处理均通过后端（index.ts → backendClient.l2Generate）
 

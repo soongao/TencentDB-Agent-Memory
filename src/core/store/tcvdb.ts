@@ -9,6 +9,14 @@
  * - Time fields stored as uint64 epoch ms (ISO ↔ epoch conversion internal)
  *
  * All methods are fault-tolerant: return empty/false on error, never throw.
+ * 中文：TcvdbMemoryStore: 腾讯云向量数据库后端实现IMemoryStore。
+ * 特性：
+ * - 服务器端密集嵌入（通过Collection嵌入配置embeddingItems）
+ * - 客户端稀疏向量（混合搜索时的BM25本地编码器）
+ * - 原生混合搜索（密集+稀疏+RRFRerank）
+ * - 标量字段查询的过滤表达式
+ * - 时间字段存储为uint64时间戳毫秒（内部进行ISO ↔ 时间戳转换）
+ * 所有方法都具有容错性：错误时返回空/false，从不抛出异常。
  */
 
 import type { MemoryRecord } from "../record/l1-writer.js";
@@ -36,6 +44,7 @@ import type { SparseVector } from "@tencentdb-agent-memory/tcvdb-text";
 // ============================
 // Config & Constants
 // ============================
+// 中文：Config & Constants
 
 export interface TcvdbMemoryStoreConfig {
   url: string;
@@ -45,6 +54,7 @@ export interface TcvdbMemoryStoreConfig {
   embeddingModel: string;
   timeout: number;
   /** Path to CA certificate PEM file (for HTTPS connections) */
+  /** 中文：CA证书PEM文件路径（用于HTTPS连接） */
   caPemPath?: string;
   logger?: StoreLogger;
   bm25Encoder?: BM25LocalEncoder;
@@ -53,14 +63,17 @@ export interface TcvdbMemoryStoreConfig {
 const TAG = "[memory-tdai][tcvdb]";
 
 /** Base collection suffixes (prefixed with database name at construction time). */
+/** 中文：基础集合后缀（在构造时前缀以数据库名称）。 */
 const L1_COLLECTION_SUFFIX = "l1_memories";
 const L0_COLLECTION_SUFFIX = "l0_conversations";
 const PROFILES_COLLECTION_SUFFIX = "profiles";
 
 /** Max documents per /document/query page (VectorDB API limit). */
+/** 中文：每个/document/query页面的最大文档数（向量数据库API限制）。 */
 const QUERY_PAGE_SIZE = 100;
 
 /** All L1 output fields returned by query/search (excludes vector/sparse_vector). */
+/** 中文：查询/搜索返回的所有L1输出字段（排除vector/sparse_vector）。 */
 const L1_OUTPUT_FIELDS = [
   "id", "text", "type", "priority", "scene_name",
   "session_key", "session_id", "timestamp_str", "timestamp_start",
@@ -68,6 +81,7 @@ const L1_OUTPUT_FIELDS = [
 ];
 
 /** All L0 output fields returned by query/search. */
+/** 中文：查询/搜索返回的所有L0输出字段。 */
 const L0_OUTPUT_FIELDS = [
   "id", "message_text", "agent_id", "session_key", "session_id", "role",
   "recorded_at_ms", "timestamp",
@@ -86,6 +100,7 @@ const PROFILE_METADATA_OUTPUT_FIELDS = [
 // ============================
 // Helpers
 // ============================
+// 中文：辅助函数
 
 function isoToEpochMs(iso: string): number {
   if (!iso) return 0;
@@ -101,11 +116,14 @@ function epochMsToIso(ms: number): string {
 /**
  * Extract agent ID from a sessionKey like `agent:<agentId>:<channel>`.
  * Returns empty string if the format doesn't match.
+ * 中文：从sessionKey如`agent:<agentId>:<channel>`中提取代理ID。
+ * 如果不匹配格式，则返回空字符串。
  */
 function extractAgentId(sessionKey: string): string {
   if (!sessionKey) return "";
   const parts = sessionKey.split(":");
   // Format: "agent:<agentId>:..." → parts[1]
+  // 中文：格式："agent:<agentId>:..." → parts[1]
   if (parts.length >= 2 && parts[0] === "agent") {
     return parts[1];
   }
@@ -115,6 +133,7 @@ function extractAgentId(sessionKey: string): string {
 // ============================
 // TcvdbMemoryStore
 // ============================
+// 中文：TcvdbMemoryStore
 
 export class TcvdbMemoryStore implements IMemoryStore {
   private readonly client: TcvdbClient;
@@ -127,6 +146,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
   private degraded = false;
 
   /** Promise that resolves when async init completes. */
+  /** 中文：异步初始化完成时resolve的Promise。 */
   private _initPromise: Promise<void> | undefined;
 
   constructor(config: TcvdbMemoryStoreConfig) {
@@ -144,16 +164,20 @@ export class TcvdbMemoryStore implements IMemoryStore {
 
     // Collection names are globally unique within a TCVDB instance,
     // so prefix with database name to avoid cross-database collisions.
+    // 中文：集合名称在TCVDB实例内部全局唯一，
+    // 因此需要前缀数据库名以避免跨数据库冲突。
     this.l1Collection = `${config.database}_${L1_COLLECTION_SUFFIX}`;
     this.l0Collection = `${config.database}_${L0_COLLECTION_SUFFIX}`;
     this.profilesCollection = `${config.database}_${PROFILES_COLLECTION_SUFFIX}`;
   }
 
   // ── Lifecycle ────────────────────────────────────────────
+  // 中文：── 生命周期 ────────────────────────────────────────────
 
   async init(_providerInfo?: EmbeddingProviderInfo): Promise<StoreInitResult> {
     // TCVDB init is async (HTTP). We store the promise so _ensureInit()
     // can also await it as a defensive fallback in each data method.
+    // 中文：TCVDB初始化是异步（HTTP）。我们存储该Promise以便_ensureInit()也可以在每个数据方法中作为防御性备份await它。
     this._initPromise = this._initAsync();
     try {
       await this._initPromise;
@@ -167,6 +191,8 @@ export class TcvdbMemoryStore implements IMemoryStore {
   /**
    * Await async initialization. Call at the start of every async method.
    * If init already completed (or failed → degraded), returns immediately.
+   * 中文：等待异步初始化完成。在每个异步方法开始时调用。
+   * 如果初始化已经完成（或失败 → 降级），则立即返回。
    */
   private async _ensureInit(): Promise<void> {
     if (this._initPromise) {
@@ -178,6 +204,9 @@ export class TcvdbMemoryStore implements IMemoryStore {
   //
   // Preferred: DISK_FLAT (lower memory, suitable for large-scale recall).
   // Fallback:  HNSW (for instances whose storage engine doesn't support DISK_FLAT).
+  // 中文：── 向量索引定义 ─────────────────────────────
+  // 首选: DISK_FLAT（占用内存较少，适用于大规模召回）。
+  // 备选: HNSW（对于存储引擎不支持DISK_FLAT的实例）.
 
   private static readonly VECTOR_INDEX_DISK_FLAT: Record<string, unknown> = {
     fieldName: "vector", fieldType: "vector", indexType: "DISK_FLAT",
@@ -193,6 +222,8 @@ export class TcvdbMemoryStore implements IMemoryStore {
   /**
    * Detect whether a createCollection error indicates DISK_FLAT is unsupported.
    * Matches on apiCode 15113 OR message containing "DISK_FLAT" + "not support".
+   * 中文：检测createCollection错误是否指示DISK_FLAT不受支持。
+   * 匹配apiCode 15113 或者消息包含"DISK_FLAT" + "not support"。
    */
   private static isDiskFlatUnsupported(err: unknown): boolean {
     if (!(err instanceof TcvdbApiError)) return false;
@@ -204,6 +235,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
   /**
    * Create a collection with DISK_FLAT vector index, falling back to HNSW
    * if the storage engine doesn't support DISK_FLAT.
+   * 中文：使用DISK_FLAT向量索创建集合，如果存储引擎不支持DISK_FLAT则回退到HNSW。
    */
   private async _createCollectionWithVectorFallback(
     params: Record<string, unknown>,
@@ -231,16 +263,20 @@ export class TcvdbMemoryStore implements IMemoryStore {
   private async _initAsync(): Promise<void> {
     try {
       // Create database (idempotent — returns true if just created, false if already existed)
+      // 中文：创建数据库（幂等——如果已存在返回true，否则返回false）
       const dbCreated = await this.client.createDatabase();
 
       if (dbCreated) {
         // TCVDB requires ~3s after database creation before collections can be created.
         // TODO: defer collection creation to first use to avoid blocking plugin startup.
+        // 中文：TCVDB在数据库创建后需要约3秒才能创建集合。
+        // TODO: 将集合创建延迟到首次使用以避免阻塞插件启动。
         this.logger?.debug?.(`${TAG} Waiting 5s for database to become ready...`);
         await new Promise((r) => setTimeout(r, 5_000));
       }
 
       // Create L1 collection (DISK_FLAT preferred, HNSW fallback)
+      // 中文：创建L1集合（首选DISK_FLAT，备选HNSW）
       await this._createCollectionWithVectorFallback(
         {
           collection: this.l1Collection,
@@ -269,6 +305,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
       );
 
       // Create L0 collection (DISK_FLAT preferred, HNSW fallback)
+      // 中文：创建L0集合（首选DISK_FLAT，备选HNSW）
       await this._createCollectionWithVectorFallback(
         {
           collection: this.l0Collection,
@@ -317,6 +354,9 @@ export class TcvdbMemoryStore implements IMemoryStore {
       // 15201 = database already exists — benign race in createDatabase().
       // 15202 (collection already exists) is now handled inside TcvdbClient.createCollection(),
       // so it should no longer reach here.
+      // 中文：15201 = 数据库已存在——createDatabase()中的良性竞争条件。
+      // 15202（集合已存在）现在由TcvdbClient.createCollection()处理，
+      // 因此不应再到达此处。
       if (err instanceof TcvdbApiError && err.apiCode === 15201) {
         this.logger?.debug?.(`${TAG} Init (benign): ${err.message}`);
         return;
@@ -342,14 +382,19 @@ export class TcvdbMemoryStore implements IMemoryStore {
 
   close(): void {
     // HTTP client — nothing to close
+    // 中文：HTTP客户端——无需关闭
   }
 
   // ── Internal: paginated query helper ────────────────────
+  // 中文：── 内部：分页查询辅助函数 ─────────────────────
 
   /**
    * Paginated /document/query that fetches all matching docs.
    * TCVDB query API returns at most `limit` docs per call.
    * We loop with offset until fewer docs than page size are returned.
+   * 中文：分页 /document/query 获取所有匹配文档。
+   * TCVDB查询API每次调用最多返回`limit`个文档。
+   * 我们使用偏移量循环，直到返回的文档少于页面大小。
    */
   private async _queryAllDocs(
     collection: string,
@@ -363,6 +408,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
     const pageSize = limit && limit < QUERY_PAGE_SIZE ? limit : QUERY_PAGE_SIZE;
 
     // eslint-disable-next-line no-constant-condition
+    // 中文：eslint-disable-next-line no-constant-condition
     while (true) {
       const queryParams: Record<string, unknown> = {
         retrieveVector: false,
@@ -378,6 +424,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
       allDocs.push(...docs);
 
       // Stop if: we got fewer than page size (last page), or we hit caller's limit
+      // 中文：停止条件：获取到的文档少于页面大小（最后一页），或达到调用者的限制
       if (docs.length < pageSize) break;
       if (limit && allDocs.length >= limit) break;
 
@@ -385,10 +432,12 @@ export class TcvdbMemoryStore implements IMemoryStore {
     }
 
     // Trim to caller's limit if specified
+    // 中文：根据指定限制裁剪至调用者限制
     return limit ? allDocs.slice(0, limit) : allDocs;
   }
 
   // ── L1 Write Operations ──────────────────────────────────
+  // 中文：── L1 写操作 ──────────────────────────────────────
 
   async upsertL1(record: MemoryRecord, _embedding?: Float32Array): Promise<boolean> {
     try {
@@ -428,6 +477,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
     };
 
     // BM25 sparse vector (if sidecar available)
+    // 中文：侧车可用时的BM25稀疏向量
     if (this.bm25Encoder) {
       const sparse = this.bm25Encoder.encodeTexts([record.content]);
       if (sparse.length > 0 && sparse[0].length > 0) {
@@ -441,6 +491,8 @@ export class TcvdbMemoryStore implements IMemoryStore {
   /**
    * Batch upsert multiple L1 records in a single API call.
    * Used by migration scripts to reduce request count.
+   * 中文：批量在一个API调用中插入多个L1记录。
+   * 由迁移脚本使用以减少请求次数。
    */
   async upsertL1Batch(records: MemoryRecord[]): Promise<number> {
     if (records.length === 0) return 0;
@@ -554,6 +606,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
   }
 
   // ── L1 Read Operations ───────────────────────────────────
+  // 中文：── L1读取操作 ───────────────────────────────────
 
   async countL1(): Promise<number> {
     try {
@@ -572,6 +625,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
       if (this.degraded) return [];
 
       // Build TCVDB filter expression from L1QueryFilter
+      // 中文：从L1QueryFilter构建TCVDB过滤表达式
       const conditions: string[] = [];
       if (filter?.sessionKey) conditions.push(`session_key = "${filter.sessionKey}"`);
       if (filter?.sessionId) conditions.push(`session_id = "${filter.sessionId}"`);
@@ -586,6 +640,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
         filterExpr,
         L1_OUTPUT_FIELDS,
         undefined, // no limit — fetch all matching
+        // 中文：无限制——获取所有匹配项
         [{ fieldName: "updated_time_ms", direction: "asc" }],
       );
 
@@ -633,23 +688,30 @@ export class TcvdbMemoryStore implements IMemoryStore {
   }
 
   // ── L1 Search Operations ─────────────────────────────────
+  // 中文：── L1搜索操作 ─────────────────────────────────
 
   async searchL1Vector(_queryEmbedding: Float32Array, topK?: number, queryText?: string): Promise<L1SearchResult[]> {
     // TCVDB uses server-side embedding — delegate to hybrid search with text
+    // 中文：TCVDB使用服务器端嵌入 — 通过文本委托给混合搜索
     if (queryText) {
       return this.searchL1HybridAsync({ queryText, topK });
     }
     // No queryText and TCVDB can't use client embeddings directly via embeddingItems
     // Return empty — callers should pass queryText for TCVDB
+    // 中文：没有queryText且TCVDB不能直接通过embeddingItems使用客户端嵌入
+    // 返回空值 — 调用者应传递queryText给TCVDB
     return [];
   }
 
   async searchL1Fts(ftsQuery: string, limit?: number): Promise<L1FtsResult[]> {
     // TCVDB has no pure FTS — use hybrid search with sparse-only path
     // The ftsQuery is raw text, use it as queryText for hybrid
+    // 中文：TCVDB没有纯FTS — 使用稀疏路径的混合搜索
+    // ftsQuery为原始文本，将其作为混合搜索的queryText使用
     if (!ftsQuery) return [];
     const results = await this.searchL1HybridAsync({ queryText: ftsQuery, topK: limit });
     // L1SearchResult and L1FtsResult have identical shapes
+    // 中文：L1SearchResult和L1FtsResult具有相同的结构
     return results;
   }
 
@@ -667,6 +729,8 @@ export class TcvdbMemoryStore implements IMemoryStore {
   /**
    * Async L1 hybrid search — the real implementation.
    * Call this directly from async contexts (hooks, tools).
+   * 中文：异步L1混合搜索——实际实现。
+   * 直接从异步上下文（钩子、工具）调用此方法。
    */
   async searchL1HybridAsync(params: {
     queryText: string;
@@ -680,6 +744,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
       if (this.degraded) return [];
 
       // Build search params
+      // 中文：构建搜索参数
       const searchParams: Record<string, unknown> = {
         limit: topK,
         outputFields: L1_OUTPUT_FIELDS,
@@ -687,9 +752,12 @@ export class TcvdbMemoryStore implements IMemoryStore {
 
       // ann: use embedding field name "text" for server-side embedding
       // (per SDK: AnnSearch(field_name="text", data='query string'))
+      // 中文：ann: 使用嵌入字段名"text"进行服务器端嵌入
+      // (根据SDK: AnnSearch(field_name="text", data='查询字符串'))
       const ann = [{
         fieldName: "text",
         data: [queryText], // embeddingItems — server-side embedding
+        // 中文：embeddingItems——服务器端嵌入
         limit: topK,
       }];
 
@@ -700,6 +768,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
           match = [{
             fieldName: "sparse_vector",
             data: [sparse[0]], // SDK wraps single sparse vector in array
+            // 中文：SDK将单个稀疏向量包装在数组中
             limit: topK,
           }];
         }
@@ -707,6 +776,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
 
       if (match) {
         // Full hybrid: dense + sparse + RRF
+        // 中文：全混合模式：密集 + 疏松 + RRF
         searchParams.ann = ann;
         searchParams.match = match;
         searchParams.rerank = { method: "rrf", k: 60 };
@@ -715,6 +785,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
         return this._parseL1SearchResults(resp.documents);
       } else {
         // Dense-only fallback (BM25 unavailable) — use /document/search with embeddingItems
+        // 中文：仅密集型降级（BM25不可用）——使用/document/search并附带embeddingItems
         const denseSearch: Record<string, unknown> = {
           embeddingItems: [queryText],
           limit: topK,
@@ -731,6 +802,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
   }
 
   // ── L0 Write Operations ──────────────────────────────────
+  // 中文：── L0 写操作 ──────────────────────────────────
 
   async upsertL0(record: { id: string; sessionKey: string; sessionId: string; role: string; messageText: string; recordedAt: string; timestamp: number }, _embedding?: Float32Array): Promise<boolean> {
     try {
@@ -770,6 +842,8 @@ export class TcvdbMemoryStore implements IMemoryStore {
   /**
    * Batch upsert multiple L0 records in a single API call.
    * Used by migration scripts to reduce request count.
+   * 中文：在一个API调用中批量插入多个L0记录。
+   * 由迁移脚本使用以减少请求次数。
    */
   async upsertL0Batch(records: Array<{ id: string; sessionKey: string; sessionId: string; role: string; messageText: string; recordedAt: string; timestamp: number }>): Promise<number> {
     if (records.length === 0) return 0;
@@ -856,6 +930,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
   }
 
   // ── L0 Read Operations ───────────────────────────────────
+  // 中文：── L0 读操作 ───────────────────────────────────
 
   async countL0(): Promise<number> {
     try {
@@ -888,6 +963,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
       );
 
       // Convert to L0QueryRow and reverse to chronological order (query is DESC, callers expect ASC)
+      // 中文：将转换为L0QueryRow并逆序排列以恢复时间顺序（查询是DESC，调用者期望ASC）
       const rows: L0QueryRow[] = docs.map((doc) => ({
         record_id: String(doc.id ?? ""),
         session_key: String(doc.session_key ?? ""),
@@ -910,6 +986,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
       const rows = await this.queryL0ForL1(sessionKey, afterRecordedAtMs, limit);
 
       // Group by session_id
+      // 中文：按session_id分组
       const groupMap = new Map<string, Array<{ id: string; role: string; content: string; timestamp: number; recordedAtMs: number }>>();
       for (const row of rows) {
         const sid = row.session_id || "";
@@ -928,6 +1005,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
       }
 
       // Convert to array, sorted by earliest message timestamp
+      // 中文：转换为数组，并按最早消息时间戳排序
       const groups: L0SessionGroup[] = [];
       for (const [sessionId, messages] of groupMap) {
         if (messages.length > 0) {
@@ -966,9 +1044,11 @@ export class TcvdbMemoryStore implements IMemoryStore {
   }
 
   // ── L0 Search Operations ─────────────────────────────────
+  // 中文：── L0 搜索操作 ─────────────────────────────────
 
   async searchL0Vector(_queryEmbedding: Float32Array, topK?: number, queryText?: string): Promise<L0SearchResult[]> {
     // TCVDB uses server-side embedding — delegate to hybrid search with text
+    // 中文：TCVDB 使用服务器端嵌入 —— 代理给混合搜索并使用文本
     if (queryText) {
       return this.searchL0HybridAsync({ queryText, topK });
     }
@@ -978,11 +1058,13 @@ export class TcvdbMemoryStore implements IMemoryStore {
   async searchL0Fts(ftsQuery: string, limit?: number): Promise<L0FtsResult[]> {
     if (!ftsQuery) return [];
     // Use hybrid search; L0SearchResult and L0FtsResult have identical shapes
+    // 中文：使用混合搜索；L0SearchResult和L0FtsResult具有相同的结构
     return this.searchL0HybridAsync({ queryText: ftsQuery, topK: limit });
   }
 
   /**
    * Async L0 hybrid search.
+   * 中文：异步执行 L0 混合搜索。
    */
   async searchL0HybridAsync(params: {
     queryText: string;
@@ -1001,6 +1083,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
       };
 
       // ann: use embedding field name "message_text" for L0 server-side embedding
+      // 中文：ann: 使用嵌入字段名 "message_text" 进行 L0 服务器端嵌入
       const ann = [{
         fieldName: "message_text",
         data: [queryText],
@@ -1158,6 +1241,7 @@ export class TcvdbMemoryStore implements IMemoryStore {
   }
 
   // ── Re-index ─────────────────────────────────────────────
+  // 中文：── Re-index ─────────────────────────────────────────────
 
   async reindexAll(
     _embedFn: (text: string) => Promise<Float32Array>,
@@ -1165,6 +1249,8 @@ export class TcvdbMemoryStore implements IMemoryStore {
   ): Promise<{ l1Count: number; l0Count: number }> {
     // TCVDB uses server-side embedding — reindex means rebuild Collection.
     // Not implemented in Phase 2-3 (requires drop + recreate + re-upsert from JSONL).
+    // 中文：TCVDB 使用服务器端嵌入 —— 重新索引意味着重建 Collection。
+    // 第二阶段至第三阶段未实现（需要执行 drop + recreate + re-upsert 操作从 JSONL 文件中）。
     this.logger?.info(`${TAG} reindexAll: TCVDB uses server-side embedding, skipping`);
     return { l1Count: 0, l0Count: 0 };
   }
@@ -1174,10 +1260,12 @@ export class TcvdbMemoryStore implements IMemoryStore {
   }
 
   // ── Internal: parse search results ───────────────────────
+  // 中文：── Internal: 解析搜索结果 ───────────────────────
 
   private _parseL1SearchResults(docArrays: Array<Array<Record<string, unknown>>>): L1SearchResult[] {
     const results: L1SearchResult[] = [];
     // hybridSearch/search returns [[doc, doc, ...]] (one array per query)
+    // 中文：hybridSearch/search 返回 [[doc, doc, ...]] （每个查询一个数组）
     const docs = docArrays?.[0] ?? [];
     for (const doc of docs) {
       results.push({

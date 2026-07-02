@@ -9,6 +9,7 @@ import type { Logger } from "../types.js";
 const PROFILE_SCOPE = "global";
 
 /** Check if an error is a rename race condition (another concurrent pull won). */
+/** 中文：检查是否为重命名竞态条件（另一个并发拉取获胜）。 */
 function isRenameRaceError(err: unknown): boolean {
   const code = (err as NodeJS.ErrnoException)?.code;
   return code === "ENOTEMPTY" || code === "EEXIST";
@@ -84,6 +85,7 @@ export async function listLocalProfiles(dataDir: string): Promise<ProfileRecord[
     }
   } catch {
     // ignore missing scene_blocks directory
+    // 中文：忽略缺失的scene_blocks目录
   }
 
   const personaPath = path.join(dataDir, "persona.md");
@@ -105,6 +107,7 @@ export async function listLocalProfiles(dataDir: string): Promise<ProfileRecord[
     }
   } catch {
     // ignore missing persona file
+    // 中文：忽略缺失的人设文件
   }
 
   return profiles;
@@ -160,6 +163,8 @@ export async function pullProfilesToLocal(
       if (isRenameRaceError(err)) {
         // Another concurrent pull already wrote scene_blocks — ours is redundant.
         // Both pulls fetched the same remote snapshot, so the other result is equivalent.
+        // 中文：另一个并发拉取已经写入了scene_blocks——我们的冗余了。
+        // 两个拉取都获取了相同的远程快照，所以另一结果等效。
         logger.debug?.(`[memory-tdai][profile-sync] scene_blocks rename lost race (${(err as NodeJS.ErrnoException).code}), using existing`);
         return baseline;
       }
@@ -179,6 +184,7 @@ export async function pullProfilesToLocal(
       }
     } catch (err) {
       // No temp persona file → remove local persona (remote has none)
+      // 中文：没有临时人设文件→移除本地人设（远程没有）
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         await fs.rm(localPersonaPath, { force: true });
       } else if (!isRenameRaceError(err)) {

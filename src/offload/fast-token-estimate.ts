@@ -7,6 +7,12 @@
  *
  * Algorithm: single-pass character classification with per-category coefficients.
  * No BPE encoding, no regex splitting — pure arithmetic on codepoints.
+ * 中文：快速令牌估算器 —— token_count/fast_token_estimate.py 的 TypeScript 版本
+ * 针对 cl100k_base 编码（GPT-4、Claude、DeepSeek、GLM、MiniMax）。
+ * 精度：大多数语言约2-7%误差（与 tiktoken cl100k_base 测试一致）。
+ * 速度：每10万字符约5ms（比 tiktoken 快约3-10倍）。
+ * 算法：单次通过字符分类并带有类别系数。
+ * 无 BPE 编码，无正则表达式拆分 —— 纯粹基于代码点的算术运算。
  */
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
@@ -15,6 +21,9 @@ import { fileURLToPath } from "url";
 // ─── CJK Lookup Table ──────────────────────────────────────────────────────
 // Each byte = token cost × 255 for one CJK character (U+4E00..U+9FFF).
 // Pre-computed from tiktoken cl100k_base actual encoding.
+// 中文：─── CJK 查找表 ──────────────────────────────────────────────────────
+// 每个字节 = 汉字令牌成本 × 255（U+4E00..U+9FFF）。
+// 从 tiktoken cl100k_base 实际编码预计算得出。
 const CJK_START = 0x4E00;
 const CJK_END = 0x9FFF;
 let _cjkTable: Uint8Array | null = null;
@@ -23,6 +32,7 @@ function loadCjkTable(): Uint8Array | null {
   if (_cjkTable) return _cjkTable;
   try {
     // Try multiple paths for the CJK table
+    // 中文：尝试多个路径查找 CJK 表
     const paths = [
       join(dirname(fileURLToPath(import.meta.url)), "../../token_count/cjk_token_table.bin"),
       join(dirname(fileURLToPath(import.meta.url)), "../../../token_count/cjk_token_table.bin"),
@@ -35,12 +45,15 @@ function loadCjkTable(): Uint8Array | null {
           return _cjkTable;
         }
       } catch { /* try next */ }
+      // 中文：继续尝试
     }
   } catch { /* ignore */ }
+  // 中文：忽略
   return null;
 }
 
 // ─── Character Classification ──────────────────────────────────────────────
+// 中文：─── 字符分类 ──────────────────────────────────────────────
 
 function isLatinLetter(cp: number): boolean {
   return (
@@ -83,11 +96,15 @@ function isGreek(cp: number): boolean {
 }
 
 // ─── Main Estimator ────────────────────────────────────────────────────────
+// 中文：─── 主要估算器 ────────────────────────────────────────────────────────
 
 /**
  * Estimate token count for a string without doing BPE encoding.
  * Targets cl100k_base (GPT-4/Claude/DeepSeek/GLM/MiniMax).
  * Error typically <5% for code/English, <10% for CJK/mixed.
+ * 中文：无需进行 BPE 编码即可估计字符串的令牌数量。
+ * 针对 cl100k_base（GPT-4/Claude/DeepSeek/GLM/MiniMax）。
+ * 对于代码/英语，误差通常<5%，对于CJK/混合文本<10%。
  */
 export function fastEstimateTokens(text: string): number {
   if (!text) return 0;
@@ -98,6 +115,7 @@ export function fastEstimateTokens(text: string): number {
   let i = 0;
 
   // Pre-scan: detect if text is non-English Latin (French, Spanish, etc.)
+  // 中文：预扫描：检测文本是否为非英文字母（如法语、西班牙语等）
   let accentCount = 0;
   let latinCount = 0;
   const sampleEnd = Math.min(n, 50000);
@@ -117,6 +135,7 @@ export function fastEstimateTokens(text: string): number {
     const cp = text.charCodeAt(i);
 
     // ── Latin word ──
+    // 中文：── 拉丁词 ──
     if (isLatinLetter(cp)) {
       let j = i + 1;
       while (j < n) {
@@ -128,6 +147,7 @@ export function fastEstimateTokens(text: string): number {
       const wl = j - i;
 
       // Check if this word contains accented characters
+      // 中文：检查这个单词是否包含重音字符
       let hasAccent = false;
       if (isNonEnglishLatin) {
         for (let k = i; k < j; k++) {
@@ -135,6 +155,7 @@ export function fastEstimateTokens(text: string): number {
         }
         if (!hasAccent) {
           // Check nearby window
+          // 中文：检查相邻窗口
           const lo = Math.max(0, i - 100);
           const hi = Math.min(n, j + 100);
           for (let k = lo; k < hi; k++) {
@@ -148,6 +169,7 @@ export function fastEstimateTokens(text: string): number {
 
       if (hasAccent) {
         // Non-English Latin words are longer in tokens
+        // 中文：非英语拉丁词在标记中更长
         if (wl <= 3) tokens += 1.0;
         else if (wl <= 5) tokens += 1.35;
         else if (wl <= 7) tokens += 1.85;
@@ -156,6 +178,7 @@ export function fastEstimateTokens(text: string): number {
         else tokens += 3.2 + (wl - 12) * 0.32;
       } else {
         // English word
+        // 中文：英语单词
         if (wl <= 4) tokens += 1.0;
         else if (wl <= 8) tokens += 1.1;
         else if (wl <= 13) tokens += 1.5;
@@ -166,11 +189,13 @@ export function fastEstimateTokens(text: string): number {
     }
 
     // ── CJK Han characters ──
+    // 中文：── CJK 汉字 ──
     if (isCjkHan(cp)) {
       let j = i + 1;
       let segTokens = 0.0;
       if (cjkTable && cp >= CJK_START && cp <= CJK_END) {
         segTokens += cjkTable[cp - CJK_START]; // table values are direct token counts (1-3)
+        // 中文：表值为直接的词元计数（1-3）
       } else {
         segTokens += 1.3;
       }
@@ -185,6 +210,7 @@ export function fastEstimateTokens(text: string): number {
       }
       const run = j - i;
       // BPE merges adjacent CJK characters. Longer segments get more merges.
+      // 中文：BPE 合并相邻的 CJK 字符。较长的片段获得更多合并
       if (run >= 4) segTokens *= 0.94;
       else if (run >= 2) segTokens *= 0.97;
       tokens += segTokens;
@@ -193,6 +219,7 @@ export function fastEstimateTokens(text: string): number {
     }
 
     // ── Japanese Kana ──
+    // 中文：── 日语假名 ──
     if (isKana(cp)) {
       let j = i + 1;
       while (j < n && isKana(text.charCodeAt(j))) j++;
@@ -208,6 +235,7 @@ export function fastEstimateTokens(text: string): number {
     }
 
     // ── Korean Hangul ──
+    // 中文：── 韩国Hangul ──
     if (isHangul(cp)) {
       tokens += 1.4;
       i++;
@@ -215,6 +243,7 @@ export function fastEstimateTokens(text: string): number {
     }
 
     // ── Cyrillic (Russian etc.) ──
+    // 中文：── 拉丁字母（包括俄语等） ──
     if (isCyrillic(cp)) {
       let j = i + 1;
       while (j < n && isCyrillic(text.charCodeAt(j))) j++;
@@ -224,6 +253,7 @@ export function fastEstimateTokens(text: string): number {
     }
 
     // ── Arabic ──
+    // 中文：── 阿拉伯文 ──
     if (isArabic(cp)) {
       let j = i + 1;
       while (j < n && isArabic(text.charCodeAt(j))) j++;
@@ -242,6 +272,7 @@ export function fastEstimateTokens(text: string): number {
     }
 
     // ── Digits (with commas, dots) ──
+    // 中文：── 数字（含逗号、小数点） ──
     if (cp >= 0x30 && cp <= 0x39) {
       let j = i + 1;
       let digits = 1;
@@ -267,12 +298,15 @@ export function fastEstimateTokens(text: string): number {
     }
 
     // ── Whitespace (space, tab) ──
+    // 中文：── 空白字符（空格、制表符） ──
     if (cp === 0x20 || cp === 0x09) { i++; continue; }
 
     // ── Newline ──
+    // 中文：── 换行 ──
     if (cp === 0x0A || cp === 0x0D) { tokens += 1.0; i++; continue; }
 
     // ── Fullwidth punctuation ──
+    // 中文：── 全角标点 ──
     if ((cp >= 0x3000 && cp <= 0x303F) || (cp >= 0xFF00 && cp <= 0xFFEF) ||
         cp === 0x2018 || cp === 0x2019 || cp === 0x201C || cp === 0x201D ||
         cp === 0x2014 || cp === 0x2026 || cp === 0x2013) {
@@ -280,9 +314,11 @@ export function fastEstimateTokens(text: string): number {
     }
 
     // ── ASCII punctuation ──
+    // 中文：── 半角标点 ──
     if (cp >= 0x21 && cp <= 0x7E) { tokens += 0.6; i++; continue; }
 
     // ── Other Unicode (emoji etc.) ──
+    // 中文：── 其他Unicode字符（包括emoji等） ──
     if (cp > 0x7F) { tokens += 2.5; i++; continue; }
 
     i++;
@@ -294,6 +330,7 @@ export function fastEstimateTokens(text: string): number {
 /**
  * Estimate tokens for an array of messages (same as buildTiktokenContextSnapshot
  * but using fast estimation instead of tiktoken).
+ * 中文：估计消息数组的令牌数（与buildTiktokenContextSnapshot相同，但使用快速估算而不是tiktoken)
  */
 export function fastEstimateMessages(messages: any[], jsonReplacer?: (key: string, value: unknown) => unknown): number {
   let total = 0;
@@ -302,6 +339,7 @@ export function fastEstimateMessages(messages: any[], jsonReplacer?: (key: strin
     total += fastEstimateTokens(str);
   }
   // JSON array overhead
+  // 中文：JSON数组开销
   total += Math.ceil(messages.length * 0.5);
   return total;
 }

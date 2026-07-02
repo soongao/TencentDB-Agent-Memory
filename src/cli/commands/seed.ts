@@ -6,6 +6,12 @@
  * - Interactive confirmation for timestamp auto-fill
  * - Output directory resolution and checkpoint detection
  * - Delegate to seed-runtime for actual execution
+ * 中文：`openclaw memory-tdai seed`命令定义。
+ * 职责：
+ * - 定义CLI参数和帮助文本
+ * - 交互式确认时间戳自动填充
+ * - 输出目录解析和检查点检测
+ * - 委托给seed-runtime进行实际执行
  */
 
 import fs from "node:fs";
@@ -21,6 +27,7 @@ const TAG = "[memory-tdai] [seed-cmd]";
 
 /**
  * Register the `seed` subcommand under the memory-tdai CLI namespace.
+ * 中文：在memory-tdai CLI命名空间下注册`seed`子命令。
  */
 export function registerSeedCommand(parent: Command, ctx: SeedCliContext): void {
   parent
@@ -56,6 +63,7 @@ Examples:
 // ============================
 // Command handler
 // ============================
+// 中文：命令处理器
 
 async function runSeedCommand(opts: SeedCommandOptions, ctx: SeedCliContext): Promise<void> {
   const { logger } = ctx;
@@ -69,6 +77,7 @@ async function runSeedCommand(opts: SeedCommandOptions, ctx: SeedCliContext): Pr
   logger.info(`${TAG}   yes:        ${opts.yes}`);
 
   // 0. Load config override file and deep-merge with base plugin config
+  // 中文：0. 加载配置覆盖文件并与基础插件配置深度合并
   const mergedPluginConfig = loadAndMergePluginConfig(
     ctx.pluginConfig as Record<string, unknown> | undefined,
     opts.configFile,
@@ -76,6 +85,7 @@ async function runSeedCommand(opts: SeedCommandOptions, ctx: SeedCliContext): Pr
   );
 
   // 1. Load and validate input
+  // 中文：1. 加载并验证输入
   let loadResult;
   try {
     loadResult = loadAndValidateInput(opts);
@@ -96,6 +106,7 @@ async function runSeedCommand(opts: SeedCommandOptions, ctx: SeedCliContext): Pr
   );
 
   // 2. Timestamp confirmation (if all messages lack timestamps)
+  // 中文：2. 时间戳确认（如果所有消息缺乏时间戳）
   if (needsTimestampConfirmation) {
     if (opts.yes) {
       console.log("   Timestamps missing — auto-filling with current time (--yes)");
@@ -113,14 +124,17 @@ async function runSeedCommand(opts: SeedCommandOptions, ctx: SeedCliContext): Pr
   }
 
   // 3. Resolve output directory
+  // 中文：3. 解析输出目录
   const outputDir = resolveOutputDir(opts.outputDir, ctx.stateDir);
   logger.info(`${TAG} Output directory: ${outputDir}`);
 
   // 4. Check for existing directory / checkpoint (resume detection)
+  // 中文：4. 检查现有目录/检查点（恢复检测）
   if (fs.existsSync(outputDir)) {
     const checkpointPath = path.join(outputDir, ".metadata", "checkpoint.json");
     if (fs.existsSync(checkpointPath)) {
       // Checkpoint exists → resume scenario → P0 not implemented
+      // 中文：检查点存在→恢复场景→P0未实现
       console.error(
         "\n❌ Resume from checkpoint is not implemented in P0 yet. " +
         "Please use a new output directory.\n" +
@@ -130,6 +144,7 @@ async function runSeedCommand(opts: SeedCommandOptions, ctx: SeedCliContext): Pr
     }
 
     // Directory exists but no checkpoint → might have stale data
+    // 中文：目录存在但无检查点→可能存在过时数据
     const entries = fs.readdirSync(outputDir);
     if (entries.length > 0) {
       console.error(
@@ -141,6 +156,7 @@ async function runSeedCommand(opts: SeedCommandOptions, ctx: SeedCliContext): Pr
   }
 
   // 5. Execute seed pipeline
+  // 中文：5. 执行种子管道
   console.log(`\n🔧 Output: ${outputDir}`);
   console.log(`▶️  Starting seed pipeline...\n`);
 
@@ -160,6 +176,7 @@ async function runSeedCommand(opts: SeedCommandOptions, ctx: SeedCliContext): Pr
   });
 
   // 6. Print summary
+  // 中文：6. 输出摘要
   console.log("\n");
   console.log("╔══════════════════════════════════════════╗");
   console.log("║               Seed Summary               ║");
@@ -176,6 +193,7 @@ async function runSeedCommand(opts: SeedCommandOptions, ctx: SeedCliContext): Pr
 // ============================
 // Helpers
 // ============================
+// 中文：辅助函数
 
 /**
  * Load an optional config override file and deep-merge it on top of the
@@ -183,6 +201,7 @@ async function runSeedCommand(opts: SeedCommandOptions, ctx: SeedCliContext): Pr
  *
  * Returns the merged config, or the base config unchanged if no override
  * file is specified.
+ * 中文：加载一个可选的配置覆盖文件，并将其深度合并到openclaw.json中的基础插件配置之上。返回合并后的配置，或如果未指定覆盖文件则返回基础配置不变。
  */
 function loadAndMergePluginConfig(
   base: Record<string, unknown> | undefined,
@@ -224,6 +243,7 @@ function loadAndMergePluginConfig(
  *
  * This is sufficient for the memory-tdai config shape:
  *   { capture: {...}, extraction: {...}, pipeline: {...}, ... }
+ * 中文：简单的两层深度合并：对于`override`中的每个键，如果基值和覆盖值都是普通对象，则合并它们；否则覆盖值获胜。这足以满足memory-tdai配置形状：{"capture": {...}, "extraction": {...}, "pipeline": {...}, ...}
  */
 function deepMerge(
   base: Record<string, unknown>,
@@ -253,6 +273,7 @@ function resolveOutputDir(explicit: string | undefined, stateDir: string): strin
   if (explicit) return path.resolve(explicit);
 
   // Default: <stateDir>/memory-tdai-seed-<YYYYMMDD-HHmmss>
+  // 中文：默认: <stateDir>/memory-tdai-seed-<YYYYMMDD-HHmmss>
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const ts =
@@ -266,6 +287,8 @@ function askConfirmation(prompt: string): Promise<boolean> {
   return new Promise((resolve) => {
     // Delay slightly to let async plugin logs flush before showing the prompt.
     // Without this, the prompt gets buried under registration logs.
+    // 中文：延迟一下，让异步插件的日志刷新后再显示提示。
+    // 否则，提示会被注册日志覆盖.
     setTimeout(() => {
       console.log("\n" + "─".repeat(60));
       const rl = readline.createInterface({

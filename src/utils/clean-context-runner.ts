@@ -7,6 +7,12 @@
  * 2. Independent system prompt (only the task prompt)
  * 3. No tool calls when enableTools=false (disableTools:true — no tool definitions sent to API)
  * 4. No contamination from the main agent's context
+ * 中文：CleanContextRunner: 在完全隔离的上下文中执行LLM调用，使用runEmbeddedPiAgent（与llm-task扩展相同的机制）。
+ * 保证：
+ * 1. 空白对话历史记录（临时会话文件）
+ * 2. 独立系统提示词（仅任务提示词）
+ * 3. 当enableTools=false时无工具调用（disableTools:true — 不发送工具定义到API）
+ * 4. 无主代理上下文污染
  */
 
 import fs from "node:fs/promises";
@@ -27,6 +33,10 @@ import type { Logger } from "../core/types.js";
  * provides equivalent behavior:
  *   1. Try `/tmp/openclaw` (if writable)
  *   2. Fall back to `os.tmpdir()/openclaw-<uid>`
+ * 中文：为memory-tdai操作解析一个首选的临时目录。
+ * 之前从`openclaw/plugin-sdk`导入作为`resolvePreferredOpenClawTmpDir`，但在openclaw 2026.2.23+中移除了该导出。此本地实现提供了等效行为：
+ * 1. 尝试 `/tmp/openclaw`（如果可写）
+ * 2. 失败时回退到 `os.tmpdir()/openclaw-<uid>`
  */
 function resolveOpenClawTmpDir(): string {
   const POSIX_DIR = "/tmp/openclaw";
@@ -36,10 +46,12 @@ function resolveOpenClawTmpDir(): string {
       return POSIX_DIR;
     }
     // Try to create it
+    // 中文：尝试创建它
     fsSync.mkdirSync(POSIX_DIR, { recursive: true, mode: 0o700 });
     return POSIX_DIR;
   } catch {
     // Fall back to os.tmpdir()
+    // 中文：回退到 os.tmpdir()
     const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
     const suffix = uid === undefined ? "openclaw" : `openclaw-${uid}`;
     const fallback = path.join(os.tmpdir(), suffix);
@@ -54,6 +66,8 @@ type RunnerLogger = Logger;
 
 // Dynamic import type — runEmbeddedPiAgent is an internal API
 // Prefer the public plugin runtime signature so host-injected runtimes stay assignable.
+// 中文：动态导入类型 — runEmbeddedPiAgent 是一个内部API
+// 优先使用公共插件运行时签名，以便宿主注入的运行时保持可分配性。
 type RunEmbeddedPiAgentFn = OpenClawPluginApi["runtime"]["agent"]["runEmbeddedPiAgent"];
 
 export interface EmbeddedAgentRuntimeLike {
@@ -93,6 +107,7 @@ async function resolveRunEmbeddedPiAgent(
 }
 
 // ── Core import (mirrors voice-call/core-bridge.ts — dist/ only, no jiti) ──
+// 中文：── 核心导入（镜像 voice-call/core-bridge.ts — 仅 dist/，无 jiti）──
 
 let _rootCache: string | null = null;
 
@@ -107,6 +122,7 @@ function findPackageRoot(startDir: string, name: string): string | null {
         if (pkg.name === name) return dir;
       }
     } catch { /* ignore */ }
+    // 中文：ignore
     const parent = path.dirname(dir);
     if (parent === dir) return null;
     dir = parent;
@@ -122,6 +138,7 @@ function resolveOpenClawRoot(): string {
   if (process.argv[1]) candidates.add(path.dirname(process.argv[1]));
   candidates.add(process.cwd());
   try { candidates.add(path.dirname(fileURLToPath(import.meta.url))); } catch { /* ignore */ }
+  // 中文：ignore
 
   for (const start of candidates) {
     const found = findPackageRoot(start, "openclaw");
@@ -157,6 +174,9 @@ function loadRunEmbeddedPiAgent(logger?: RunnerLogger): Promise<RunEmbeddedPiAge
  * Pre-warm the embedded agent import. Call this during plugin init to avoid
  * the cold-start penalty on the first actual extraction run.
  * Returns immediately (fire-and-forget) — errors are swallowed.
+ * 中文：预热嵌入代理导入。在插件初始化期间调用此函数以避免
+ * 首次实际提取运行时的冷启动惩罚。
+ * 立即返回（即发即忘）—— 错误被吞掉。
  */
 export function prewarmEmbeddedAgent(
   logger?: RunnerLogger,
@@ -182,8 +202,10 @@ function collectText(payloads: Array<{ text?: string; isError?: boolean }> | und
 }
 
 // ── Model resolution utilities ──
+// 中文：── 模型解析工具 ──
 
 /** Parsed model reference: { provider, model } */
+/** 中文：解析模型引用：{ provider, model } */
 export interface ModelRef {
   provider: string;
   model: string;
@@ -198,6 +220,13 @@ export interface ModelRef {
  *   "custom-host/org/model-v2"    → { provider: "custom-host", model: "org/model-v2" }
  *   ""                            → undefined
  *   "bare-model-name"             → undefined (no "/" — may be an alias)
+ * 中文：将"provider/model"字符串拆分为其组件。
+ * 如果输入为空或不包含"/"，则返回undefined。
+ * 示例：
+ * "azure/gpt-5.2-chat"          → { provider: "azure", model: "gpt-5.2-chat" }
+ * "custom-host/org/model-v2"    → { provider: "custom-host", model: "org/model-v2" }
+ * ""                            → undefined
+ * "bare-model-name"             → undefined（无"/"，可能是别名）
  */
 export function parseModelRef(raw: string | undefined): ModelRef | undefined {
   if (!raw) return undefined;
@@ -221,6 +250,12 @@ export function parseModelRef(raw: string | undefined): ModelRef | undefined {
  * 2. If the value contains "/", parse directly
  * 3. If not (may be an alias), look up in `agents.defaults.models` alias table
  * 4. Return undefined if nothing resolves — let the core use its built-in default
+ * 中文：从主OpenClaw配置中解析用户的默认模型。
+ * 解析顺序：
+ * 1. 读取`agents.defaults.model`（字符串或{ primary }）
+ * 2. 如果值包含"/"，直接解析
+ * 3. 否则（可能是别名），查找`agents.defaults.models`别名表
+ * 4. 如果没有任何解析结果，则返回undefined，让核心使用其内置默认值
  */
 export function resolveModelFromMainConfig(config: unknown): ModelRef | undefined {
   if (!config || typeof config !== "object") return undefined;
@@ -233,6 +268,7 @@ export function resolveModelFromMainConfig(config: unknown): ModelRef | undefine
   if (!defaults || typeof defaults !== "object") return undefined;
 
   // Step 1: extract raw model value (string | { primary?: string })
+  // 中文：步骤1：提取原始模型值（string | { primary?: string }）
   const modelCfg = defaults.model;
   let raw: string | undefined;
   if (typeof modelCfg === "string") {
@@ -244,10 +280,12 @@ export function resolveModelFromMainConfig(config: unknown): ModelRef | undefine
   if (!raw) return undefined;
 
   // Step 2: try direct "provider/model" parse
+  // 中文：步骤2：尝试直接"provider/model"解析
   const direct = parseModelRef(raw);
   if (direct) return direct;
 
   // Step 3: alias lookup — raw doesn't contain "/", check agents.defaults.models
+  // 中文：步骤3：别名查找——原始字符串不包含"/"，检查agents.defaults.models
   const models = defaults.models as Record<string, unknown> | undefined;
   if (!models || typeof models !== "object") return undefined;
 
@@ -259,6 +297,7 @@ export function resolveModelFromMainConfig(config: unknown): ModelRef | undefine
     if (alias.trim().toLowerCase() !== rawLower) continue;
 
     // key is "provider/model" format
+    // 中文：键为"provider/model"格式
     const resolved = parseModelRef(key);
     if (resolved) return resolved;
   }
@@ -268,6 +307,7 @@ export function resolveModelFromMainConfig(config: unknown): ModelRef | undefine
 
 export interface CleanContextRunnerOptions {
   config: unknown; // OpenClawConfig
+  // 中文：OpenClawConfig
   provider?: string;
   model?: string;
   /**
@@ -275,19 +315,29 @@ export interface CleanContextRunnerOptions {
    * Takes precedence over separate `provider`/`model` fields.
    * When all three (modelRef, provider, model) are omitted,
    * automatically falls back to the main config's `agents.defaults.model`.
+   * 中文：方便字段：完整的"provider/model"字符串。
+   * 优先于单独的`provider`/`model`字段。
+   * 当省略所有三个（modelRef, provider, model）时，
+   * 自动回退到主配置中的`agents.defaults.model`。
    */
   modelRef?: string;
   /** Preferred runtime seam. When absent, falls back to the legacy dist bridge. */
+  /** 中文：首选运行时衔接点。若不存在，则回退至遗留分发桥接. */
   agentRuntime?: EmbeddedAgentRuntimeLike;
   /** Allow the LLM to use tools (read_file, write_to_file, etc). Default: false */
+  /** 中文：允许LLM使用工具（read_file, write_to_file等）。默认值：false */
   enableTools?: boolean;
   /** Logger instance for detailed tracing */
+  /** 中文：详细跟踪的日志实例 */
   logger?: RunnerLogger;
 }
 
 // Stable empty directory used as default workspaceDir so that:
 // 1. Bootstrap/skills scans find nothing → clean LLM context
 // 2. The path is constant → plugin cacheKey stays stable (no re-registration)
+// 中文：稳定的空目录用作默认workspaceDir，以便：
+// 1. Bootstrap/skills扫描未发现任何内容 → 清洁的LLM上下文
+// 2. 路径恒定 → 插件缓存Key保持稳定（无需重新注册）
 let _cleanWorkspaceDir: string | undefined;
 async function getCleanWorkspaceDir(): Promise<string> {
   if (_cleanWorkspaceDir) return _cleanWorkspaceDir;
@@ -301,8 +351,10 @@ export class CleanContextRunner {
   private options: CleanContextRunnerOptions;
   private logger: RunnerLogger | undefined;
   /** Resolved provider after modelRef / config fallback */
+  /** 中文：模型提供方解析后缀modelRef / 配置回退后的结果 */
   private resolvedProvider: string | undefined;
   /** Resolved model after modelRef / config fallback */
+  /** 中文：模型解析后缀modelRef / 配置回退后的结果 */
   private resolvedModel: string | undefined;
 
   constructor(options: CleanContextRunnerOptions) {
@@ -314,6 +366,11 @@ export class CleanContextRunner {
     // 2. explicit provider + model fields
     // 3. main config agents.defaults.model   — automatic fallback
     // 4. undefined (let core use built-in default)
+    // 中文：模型解析优先级：
+    // 1. modelRef（"provider/model"字符串） — 最高
+    // 2. 显式指定的提供方+模型字段
+    // 3. 主配置agents.defaults.model   — 自动回退
+    // 4. 未指定（让核心使用内置默认值）
     const fromRef = parseModelRef(options.modelRef);
     if (fromRef) {
       this.resolvedProvider = fromRef.provider;
@@ -323,6 +380,7 @@ export class CleanContextRunner {
       this.resolvedModel = options.model;
     } else {
       // No explicit model specified — fall back to main config
+      // 中文：未显式指定模型 — 回退至主配置
       const fromConfig = resolveModelFromMainConfig(options.config);
       if (fromConfig) {
         this.resolvedProvider = fromConfig.provider;
@@ -332,6 +390,7 @@ export class CleanContextRunner {
         );
       }
       // else: both undefined → core will use its built-in default (anthropic/claude-opus-4-6)
+      // 中文：else: undefined → core 将使用其内置默认值 (anthropic/claude-opus-4-6)
     }
   }
 
@@ -341,16 +400,22 @@ export class CleanContextRunner {
    *
    * When `workspaceDir` is provided it overrides the default `process.cwd()`,
    * letting the LLM's file-tool calls resolve paths relative to a custom root.
+   * 中文：在完全隔离的清洁环境中运行提示。
+   * 返回LLM的文字输出。
+   * 当提供 `workspaceDir` 时，它会覆盖默认的 `process.cwd()`，
+   * 使LLM的文件工具调用相对于自定义根目录解析路径。
    */
   async run(params: {
     prompt: string;
     /** Optional system prompt. When provided, `prompt` is used as the user message. */
+    /** 中文：可选的系统提示。当提供时，`prompt` 将作为用户消息使用。 */
     systemPrompt?: string;
     taskId: string;
     timeoutMs?: number;
     maxTokens?: number;
     workspaceDir?: string;
     /** Plugin instance ID for llm_call metric (optional) */
+    /** 中文：llm_call指标的插件实例ID（可选） */
     instanceId?: string;
   }): Promise<string> {
     const runStartMs = Date.now();
@@ -366,6 +431,7 @@ export class CleanContextRunner {
       const sessionFile = path.join(tmpDir, "session.json");
 
       // Phase 1: Resolve runEmbeddedPiAgent (prefer runtime, fallback to legacy dist bridge)
+      // 中文：阶段1：解决 runEmbeddedPiAgent （优先运行时，回退到遗留dist桥接）
       const importStartMs = Date.now();
       const runEmbeddedPiAgent = await resolveRunEmbeddedPiAgent(
         this.options.agentRuntime,
@@ -382,6 +448,10 @@ export class CleanContextRunner {
       // scene extraction (read/write/edit). This prevents the LLM from
       // accessing exec, sessions, browser, cron, or any other powerful tools.
       // File deletion is handled via "soft-delete" (write empty) + cleanup afterward.
+      // 中文：推导一个禁用插件的配置以防止 loadOpenClawPlugins
+      // 在工作空间目录与网关原始工作空间不同（缓存键不匹配触发全量重新加载）时重新注册插件。
+      // 安全：限制可用工具为场景提取所需的最小集（读/写/编辑）。这防止LLM访问执行、会话、浏览器、定时任务或其他任何强大工具。
+      // 文件删除通过“软删除”（写空内容）+ 之后清理来处理。
       const cleanConfig = {
         ...(this.options.config as Record<string, unknown>),
         plugins: {
@@ -394,6 +464,9 @@ export class CleanContextRunner {
           // scene extraction (read/write/edit).
           // When enableTools=false, pass an empty allow list — disableTools:true
           // will prevent tools from being sent to the API entirely.
+          // 中文：当 enableTools=true 时，限制为场景提取所需的最小集（读/写/编辑）。
+          // 当 enableTools=false 时，传递一个空的允许列表 — disableTools:true
+          // 将完全禁止工具发送到API。
           allow: this.options.enableTools ? ["read", "write", "edit"] : [],
         },
         // Override the full agent system prompt with the caller's extraction-specific
@@ -401,6 +474,10 @@ export class CleanContextRunner {
         // AGENTS.md, workspace context, tool guidance, etc.) to:
         //   1. Save ~5000 tokens per LLM call
         //   2. Avoid instruction interference with extraction prompts
+        // 中文：用调用者的提取特定系统提示覆盖整个代理系统提示。
+        // 这将替换OpenClaw的默认系统提示（身份、AGENTS.md、工作空间上下文、工具指导等）以：
+        // 1. 每次LLM调用节省约5000个令牌
+        // 2. 避免指令干扰提取提示
         agents: {
           ...((this.options.config as Record<string, unknown>)?.agents as Record<string, unknown> | undefined),
           defaults: {
@@ -414,6 +491,8 @@ export class CleanContextRunner {
 
       // systemPrompt is now in config.agents.defaults.systemPromptOverride
       // (actual [system] role), so user prompt only contains the actual content.
+      // 中文：systemPrompt 现在在 config.agents.defaults.systemPromptOverride
+      // （实际 [系统] 角色），因此用户提示仅包含实际内容。
       const effectivePrompt = params.prompt;
 
       const ts = Date.now();
@@ -422,6 +501,7 @@ export class CleanContextRunner {
       this.logger?.debug?.(`${TAG} run() starting embedded agent: sessionId=${sessionId}, runId=${runId}, provider=${this.resolvedProvider ?? "(default)"}, model=${this.resolvedModel ?? "(default)"}`);
 
       // [l1-debug] INVOKE — what are we about to send to the embedded agent?
+      // 中文：[l1-debug] INVOKE — 我们即将发送给嵌入式代理的是什么？
       const sysPromptOverrideLen =
         ((cleanConfig.agents as Record<string, unknown> | undefined)?.defaults as Record<string, unknown> | undefined)?.systemPromptOverride
           ? String(
@@ -435,10 +515,13 @@ export class CleanContextRunner {
       );
 
       // Phase 2: Embedded agent run (LLM call + tool calls)
+      // 中文：第二阶段：嵌入式代理运行（LLM 调用 + 工具调用）
       const agentStartMs = Date.now();
       // extraSystemPrompt: fallback for openclaw < 2026.4.7 which does not support
       // config.agents.defaults.systemPromptOverride. On newer versions the
       // override takes precedence and this becomes a no-op append.
+      // 中文：extraSystemPrompt: 作为 openclaw < 2026.4.7 的回退，在不支持
+      // config.agents.defaults.systemPromptOverride 的较新版本中，优先级较高且此附加项变为无操作追加。
       const effectiveSystemPrompt =
         params.systemPrompt ||
         "You are a precise data extraction and generation assistant. Follow the user instructions exactly. Respond only with the requested output format.";
@@ -458,6 +541,7 @@ export class CleanContextRunner {
         // tool calls during pure text extraction tasks.
         // If a provider (e.g. qwencode) rejects empty tools[], users should
         // switch to StandaloneLLMRunner via LLM configuration instead.
+        // 中文：当 enableTools=false 时，传递 disableTools:true 以确保不会向 API 发送工具定义。这避免了将工具模式污染到 LLM 上下文中，并防止模型在纯文本提取任务期间尝试调用工具。如果提供者（例如 qwencode）拒绝空的 tools[]，用户应通过 LLM 配置切换到 StandaloneLLMRunner。
         disableTools: !this.options.enableTools,
         extraSystemPrompt: effectiveSystemPrompt,
         streamParams: {
@@ -468,6 +552,7 @@ export class CleanContextRunner {
       this.logger?.debug?.(`${TAG} run() embedded agent completed: ${agentElapsedMs}ms`);
 
       // [l1-debug] RESULT — what did the embedded agent return?
+      // 中文：[l1-debug] RESULT — 嵌入式代理返回了什么？
       {
         const payloadsRaw = (result as Record<string, unknown> | undefined)?.payloads;
         const payloads = Array.isArray(payloadsRaw)
@@ -490,6 +575,7 @@ export class CleanContextRunner {
       }
 
       // Phase 3: Collect output
+      // 中文：第三阶段：收集输出
       const text = collectText((result as Record<string, unknown>).payloads as Array<{ text?: string; isError?: boolean }> | undefined);
       const totalMs = Date.now() - runStartMs;
 
@@ -497,8 +583,10 @@ export class CleanContextRunner {
         // Empty output is normal when the LLM decides there is nothing to
         // extract (e.g. trivial greetings).  Log a warning instead of
         // throwing so the caller can handle it gracefully.
+        // 中文：当 LLM 决定没有需要提取的内容时（例如琐碎的问候语），空输出是正常的。记录警告而不是抛出异常，以便调用者能够优雅地处理。
         this.logger?.warn?.(`${TAG} run() empty output after ${totalMs}ms (import=${importElapsedMs}ms, agent=${agentElapsedMs}ms) — treating as empty result`);
         // [l1-debug] EMPTY_DUMP — dump the full result shape so we can see where text went
+        // 中文：[l1-debug] EMPTY_DUMP — 将完整结果形状进行dump以便我们可以看到文本去了哪里
         try {
           const dump = JSON.stringify(result, (_k, v) => {
             if (typeof v === "string" && v.length > 500) return v.slice(0, 500) + `…(+${v.length - 500})`;
@@ -509,6 +597,7 @@ export class CleanContextRunner {
           this.logger?.warn?.(`${TAG} [l1-debug] EMPTY_DUMP taskId=${params.taskId}, dumpFailed=${dumpErr instanceof Error ? dumpErr.message : String(dumpErr)}`);
         }
         // llm_call metric (empty output)
+        // 中文：llm_call metric (empty output)
         if (params.instanceId && this.logger) {
           report("llm_call", {
             taskId: params.taskId,
@@ -527,6 +616,7 @@ export class CleanContextRunner {
       this.logger?.debug?.(`${TAG} run() completed: ${totalMs}ms total (import=${importElapsedMs}ms, agent=${agentElapsedMs}ms), output=${text.length} chars`);
 
       // ── llm_call metric (success) ──
+      // 中文：── llm_call metric (success) ──
       if (params.instanceId && this.logger) {
         report("llm_call", {
           taskId: params.taskId,
@@ -545,6 +635,7 @@ export class CleanContextRunner {
       const totalMs = Date.now() - runStartMs;
       this.logger?.error(`${TAG} run() failed after ${totalMs}ms: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
       // ── llm_call metric (failure) ──
+      // 中文：── llm_call metric (failure) ──
       if (params.instanceId && this.logger) {
         report("llm_call", {
           taskId: params.taskId,

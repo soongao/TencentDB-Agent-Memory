@@ -5,6 +5,11 @@
  * 1. Fast-path re-apply: re-offload confirmed mild replacements + delete aggressive-deleted messages
  * 2. Token guard: if still above thresholds, run full L3 (Aggressive + Mild) inline
  * 3. MMD injection: injects active/history MMD into messages
+ * 中文：before_prompt_build hook handler.
+ * 三阶段上下文清理前的llm_input:
+ * 1. 快速路径重试：重新应用确认的轻微替换+删除激进删除的消息
+ * 2. 分词保护：若仍超出阈值，运行全量L3（激进+轻微）内联
+ * 3. MMD注入：注入活跃/历史MMD到消息中
  */
 import { PLUGIN_DEFAULTS } from "../types.js";
 import { readOffloadEntries, markOffloadStatus } from "../storage.js";
@@ -48,6 +53,7 @@ export function createBeforePromptBuildHandler(
 ) {
   return async (event: any, _ctx: any) => {
     // Skip internal memory-pipeline sessions
+    // 中文：Skip internal memory-pipeline sessions
     const _sk = stateManager.getLastSessionKey() ?? _ctx?.sessionKey;
     if (typeof _sk === "string" && /memory-.*-session-\d+/.test(_sk)) return;
 
@@ -68,6 +74,7 @@ export function createBeforePromptBuildHandler(
       }
 
       // Phase 1: Fast-path
+      // 中文：阶段1：快速路径
       const snapBefore = buildTiktokenContextSnapshot("before_prompt_pre", messages, null, null);
       const tokensBefore = snapBefore.totalTokens;
 
@@ -98,6 +105,8 @@ export function createBeforePromptBuildHandler(
         }
         // FIX: For mixed assistant messages (text + tool_use), strip deleted tool_use
         // blocks to prevent orphaned tool_use without matching tool_result (Anthropic 400).
+        // 中文：FIX: 对于混合助手消息（文本+tool_use），移除被删除的tool_use
+        // 块以防止孤立的tool_use缺少匹配的tool_result (Anthropic 400)
         if (hasDeleted && isAssistantMessageWithToolUse(msg) && !isOnlyToolUseAssistant(msg)) {
           const content = msg.type === "message" ? msg.message?.content : msg.content;
           if (Array.isArray(content)) {
@@ -145,6 +154,7 @@ export function createBeforePromptBuildHandler(
       }
 
       // Phase 2: Token guard
+      // 中文：阶段2：分词保护
       const contextWindow = typeof getContextWindow === "function" ? getContextWindow() : PLUGIN_DEFAULTS.defaultContextWindow;
       const mildRatio = pluginConfig?.mildOffloadRatio ?? PLUGIN_DEFAULTS.mildOffloadRatio;
       const aggressiveRatio = pluginConfig?.aggressiveCompressRatio ?? PLUGIN_DEFAULTS.aggressiveCompressRatio;
@@ -192,6 +202,7 @@ export function createBeforePromptBuildHandler(
           }
         }
         // If aggressive stalled due to user message protection, force emergency
+        // 中文：若激进模式因用户消息保护而停滞，强制紧急处理
         if (result.stalledByUserMsg && workingTokens >= aggressiveThreshold) {
           logger.warn(`[context-offload] before_prompt_build AGGRESSIVE stalled, forcing emergency fallback`);
           stateManager._forceEmergencyNext = true;
@@ -248,6 +259,7 @@ export function createBeforePromptBuildHandler(
       }
 
       // Phase 3: MMD Injection
+      // 中文：阶段3：MMD注入
       await injectMmdIntoMessages(messages, stateManager, logger, getContextWindow, pluginConfig, { waitForL15: true });
 
       traceOffloadDecision({

@@ -5,6 +5,10 @@
  * but calls the LLM directly via AI SDK instead of routing through a remote backend.
  *
  * Used when `offload.model` is configured and `offload.backendUrl` is not set.
+ * 中文：LocalLlmClient — local-mode offload LLM客户端。
+ * 实现与BackendClient相同的接口（l1Summarize, l15Judge, l2Generate）
+ * 但通过AI SDK直接调用LLM，而不是路由到远程后端。
+ * 当配置了`offload.model`且未设置`offload.backendUrl`时使用。
  */
 import { callLlm, type LlmCallerConfig } from "./llm-caller.js";
 import { createNoThinkFetch, type DisableThinkingStrategy } from "../../utils/no-think-fetch.js";
@@ -45,6 +49,7 @@ export class LocalLlmClient {
     this.logger = logger;
 
     // Cache the fetch wrapper at construction time — avoids per-call creation.
+    // 中文：在构造时缓存fetch包装器——避免每次调用都创建。
     this.customFetch = cfg.disableThinking
       ? createNoThinkFetch(cfg.disableThinking)
       : undefined;
@@ -53,6 +58,7 @@ export class LocalLlmClient {
   }
 
   // ─── L1 Summarize ──────────────────────────────────────────────────────────
+  // 中文：─── L1 总结 ─────────────────────────────────────────────────────────────
 
   async l1Summarize(req: L1Request): Promise<L1Response> {
     const pairs: L1ToolPair[] = req.toolPairs.map((p) => ({
@@ -81,6 +87,7 @@ export class LocalLlmClient {
   }
 
   // ─── L1.5 Judge ────────────────────────────────────────────────────────────
+  // 中文：─── L1.5 判断 ───────────────────────────────────────────────────────────
 
   async l15Judge(req: L15Request): Promise<L15Response> {
     const currentMmd: L15CurrentMmd | null = req.currentMmd
@@ -115,6 +122,7 @@ export class LocalLlmClient {
     if (!result) {
       this.logger?.warn?.(`${TAG} L1.5: failed to parse judgment from LLM response (${raw.length} chars)`);
       // Return all-null to trigger normalizeJudgment's "LLM unavailable" path
+      // 中文：返回全空值以触发normalizeJudgment的"LLM不可用"路径
       return {
         taskCompleted: false,
         isContinuation: false,
@@ -126,6 +134,7 @@ export class LocalLlmClient {
   }
 
   // ─── L2 Generate ───────────────────────────────────────────────────────────
+  // 中文：─── L2 生成 ─────────────────────────────────────────────────────────────
 
   async l2Generate(req: L2Request): Promise<L2Response> {
     const entries: L2NewEntry[] = req.newEntries.map((e) => ({
@@ -150,6 +159,7 @@ export class LocalLlmClient {
       userPrompt,
       label: "L2",
       timeoutMs: 120_000, // L2 may take longer due to complex prompts
+      // 中文：L2 可能会因为复杂的提示而耗时较长
       customFetch: this.customFetch,
     }, this.logger);
 
@@ -172,11 +182,14 @@ export class LocalLlmClient {
   }
 
   // ─── Stubs (not applicable in local mode) ──────────────────────────────────
+  // 中文：─── 占位符（在本地模式不适用） ───────────────────────────────────────
 
   /** No-op in local mode — state reporting requires a remote backend. */
+  /** 中文：在本地模式下为空操作——状态报告需要远程后端。 */
   async storeState(_payload: unknown): Promise<void> {}
 
   /** L4 Skill generation is not supported in local mode. */
+  /** 中文：L4 技能生成不支持本地模式。 */
   async l4Generate(_req: unknown): Promise<unknown> {
     return null;
   }

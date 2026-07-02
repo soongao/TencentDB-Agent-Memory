@@ -1,5 +1,6 @@
 /**
  * L3 token counting: prefer tiktoken (exact for OpenAI-style BPE), with heuristic fallback.
+ * 中文：L3 token计数：优先使用tiktoken（适用于OpenAI风格的BPE），备用启发式Fallback.
  */
 import { getEncoding, type Tiktoken } from "js-tiktoken";
 import { PLUGIN_DEFAULTS, type PluginConfig, type PluginLogger } from "./types.js";

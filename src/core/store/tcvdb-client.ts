@@ -5,6 +5,9 @@
  * retries (5xx / timeout), and error normalization.
  *
  * API docs: https://cloud.tencent.com/document/product/1709
+ * 中文：腾讯云VectorDB HTTP客户端。
+ * 围绕VectorDB HTTP API的薄层封装。处理认证、超时、重试（5xx/超时）和错误规范化。
+ * API文档：https://cloud.tencent.com/document/product/1709
  */
 
 import fs from "node:fs";
@@ -18,20 +21,27 @@ import type { StoreLogger } from "./types.js";
 
 export interface TcvdbClientConfig {
   /** Instance URL (e.g. "http://10.0.1.1:80") */
+  /** 中文：实例URL（例如：“http://10.0.1.1:80”） */
   url: string;
   /** Account name (default: "root") */
+  /** 中文：账户名（默认：“root”） */
   username: string;
   /** API Key */
+  /** 中文：API密钥 */
   apiKey: string;
   /** Database name */
+  /** 中文：数据库名称 */
   database: string;
   /** Request timeout in ms (default: 10000) */
+  /** 中文：请求超时时间（毫秒，默认：10000） */
   timeout: number;
   /** Path to CA certificate PEM file (for HTTPS connections) */
+  /** 中文：CA证书PEM文件路径（用于HTTPS连接） */
   caPemPath?: string;
 }
 
 /** Standard VectorDB API response envelope. */
+/** 中文：标准VectorDB API响应包络 */
 interface ApiResponse {
   code: number;
   msg: string;
@@ -39,17 +49,20 @@ interface ApiResponse {
 }
 
 /** Search/hybridSearch response shape. */
+/** 中文：搜索/混合搜索响应形状。 */
 export interface SearchResponse {
   documents: Array<Array<Record<string, unknown>>>;
 }
 
 /** Query response shape. */
+/** 中文：查询响应形状。 */
 export interface QueryResponse {
   documents: Array<Record<string, unknown>>;
   count?: number;
 }
 
 /** Collection info from describeCollection. */
+/** 中文：describeCollection返回的集合信息。 */
 export interface CollectionInfo {
   collection: string;
   database: string;
@@ -75,6 +88,7 @@ export class TcvdbApiError extends Error {
 // ============================
 // Client
 // ============================
+// 中文：Client
 
 const TAG = "[memory-tdai][tcvdb-client]";
 const MAX_RETRIES = 2;
@@ -86,6 +100,7 @@ export class TcvdbClient {
   private readonly timeout: number;
   private readonly logger?: StoreLogger;
   /** undici dispatcher for HTTPS + custom CA. */
+  /** 中文：undici分发器用于HTTPS+自定义CA。 */
   private readonly dispatcher?: Dispatcher;
 
   constructor(config: TcvdbClientConfig, logger?: StoreLogger) {
@@ -96,11 +111,15 @@ export class TcvdbClient {
     this.logger = logger;
 
     // Log connection info at construction time.
+    // 中文：在构造时记录连接信息。
     this.logger?.debug?.(`${TAG} url=${this.baseUrl} db=${this.database} timeout=${this.timeout}${this.baseUrl.startsWith("https://") ? ` https=true caPemPath=${config.caPemPath ?? "(none)"}` : ""}`);
 
     // For HTTPS with a custom CA certificate, create a dedicated undici Agent.
     // We use undici.request() instead of global fetch because fetch's
     // `dispatcher` option is unreliable across Node versions.
+    // 中文：对于带有自定义CA证书的HTTPS，创建一个专用的undici Agent。
+    // 我们使用undici.request()而不是全局fetch，因为fetch的
+    // dispatcher选项在不同Node版本间不可靠。
     if (this.baseUrl.startsWith("https://") && config.caPemPath) {
       try {
         const ca = fs.readFileSync(config.caPemPath, "utf-8");
@@ -113,10 +132,13 @@ export class TcvdbClient {
   }
 
   // ── Generic request ─────────────────────────────────────
+  // 中文：── 通用请求 ─────────────────────────────────────
 
   /**
    * Send a POST request to VectorDB API.
    * Handles auth, timeout, retries (5xx/timeout), and error unwrapping.
+   * 中文：向VectorDB API发送POST请求。
+   * 处理认证、超时、重试（5xx/超时）和错误解包。
    */
   async request<T = ApiResponse>(path: string, body: Record<string, unknown>): Promise<T> {
     let lastError: Error | undefined;
@@ -150,6 +172,7 @@ export class TcvdbClient {
         }
 
         // Always log completion at info level (one line per request)
+        // 中文：每次请求完成后始终记录一条信息级别日志（一行记录一次请求）
         const totalMs = Math.round(performance.now() - t0);
         this.logger?.info(`${TAG} ${path} ${totalMs}ms${attempt > 0 ? ` (${attempt + 1} attempts)` : ""}`);
 
@@ -172,10 +195,12 @@ export class TcvdbClient {
   }
 
   // ── Database operations ─────────────────────────────────
+  // 中文：── 数据库操作 ─────────────────────────────────
 
   async createDatabase(dbName?: string): Promise<boolean> {
     const name = dbName ?? this.database;
     // SDK pattern: list first, create only if not found
+    // 中文：SDK模式：先列出，如未找到再创建
     const listResp = await this.request<{ databases: string[] }>("/database/list", {});
     const exists = (listResp.databases ?? []).includes(name);
     if (exists) {
@@ -188,10 +213,12 @@ export class TcvdbClient {
   }
 
   // ── Collection operations ───────────────────────────────
+  // 中文：── 集合操作 ───────────────────────────────
 
   async createCollection(params: Record<string, unknown>): Promise<void> {
     const name = String(params.collection ?? "");
     // SDK pattern: try describe first, create only if not found (code 15302)
+    // 中文：SDK模式：先尝试描述，如未找到再创建（代码15302）
     try {
       await this.describeCollection(name);
       this.logger?.debug?.(`${TAG} Collection already exists: ${name}`);
@@ -199,8 +226,10 @@ export class TcvdbClient {
     } catch (err) {
       if (!(err instanceof TcvdbApiError && err.apiCode === 15302)) {
         throw err; // unexpected error
+        // 中文：意外错误
       }
       // 15302 = collection not found → proceed to create
+      // 中文：15302 = 集合未找到 → 继续创建
     }
     try {
       await this.request("/collection/create", {
@@ -211,6 +240,8 @@ export class TcvdbClient {
     } catch (err) {
       // 15202 = collection already exists — race between describe and create.
       // Semantically identical to "describe found it", so treat as success.
+      // 中文：15202 = 集合已存在 — 描述和创建之间发生竞态。
+      // 语义上等同于“描述成功”，因此视为成功。
       if (err instanceof TcvdbApiError && err.apiCode === 15202) {
         this.logger?.debug?.(`${TAG} Collection already exists (race): ${name}`);
         return;
@@ -228,6 +259,7 @@ export class TcvdbClient {
   }
 
   // ── Document operations ─────────────────────────────────
+  // 中文：── 文档操作 ─────────────────────────────────
 
   async upsert(collection: string, documents: Record<string, unknown>[]): Promise<void> {
     await this.request("/document/upsert", {
@@ -276,6 +308,8 @@ export class TcvdbClient {
   /**
    * Count documents matching an optional filter.
    * Uses the dedicated /document/count endpoint.
+   * 中文：根据可选过滤条件计数匹配的文档。
+   * 使用专用的 /document/count 端点。
    */
   async count(collection: string, filter?: string): Promise<number> {
     const query: Record<string, unknown> = {};
@@ -290,6 +324,7 @@ export class TcvdbClient {
   }
 
   // ── Convenience getters ─────────────────────────────────
+  // 中文：── 方便获取器 ─────────────────────────────────
 
   getDatabase(): string {
     return this.database;

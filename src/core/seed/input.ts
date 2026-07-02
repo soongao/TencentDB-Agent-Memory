@@ -7,6 +7,13 @@
  * 3. Six-layer validation (file → top-level → session → round → message → timestamp consistency)
  * 4. Normalize into NormalizedInput with auto-generated sessionIds
  * 5. Timestamp all-or-none check + fill strategy
+ * 中文：输入加载、验证、规范化以及`seed`命令的时间戳处理。
+ * 职责：
+ * 1. 从文件中加载原始JSON
+ * 2. 检测格式A（`{ sessions: [...] }`） vs 格式B（`[...]`）
+ * 3. 六层验证（文件 → 高级别 → 会话 → 轮次 → 消息 → 时间戳一致性检查）
+ * 4. 归一化为NormalizedInput，自动生成sessionId
+ * 5. 时间戳全或无校验 + 填充策略
  */
 
 import fs from "node:fs";
@@ -25,11 +32,14 @@ import type {
 // ============================
 // Public API
 // ============================
+// 中文：Public API
 
 export interface LoadAndValidateResult {
   /** Normalized input ready for pipeline consumption. */
+  /** 中文：归一化的输入已准备好供管道消费。 */
   input: NormalizedInput;
   /** Whether the user needs to confirm timestamp auto-fill. */
+  /** 中文：用户是否需要确认时间戳自动填充。 */
   needsTimestampConfirmation: boolean;
 }
 
@@ -38,17 +48,22 @@ export interface LoadAndValidateResult {
  *
  * Throws on fatal validation errors with a human-readable message
  * that includes all collected errors.
+ * 中文：从文件加载、验证和规范化种子输入。
+ * 在致命验证错误时抛出异常，并附带包含所有收集错误的人类可读消息
  */
 export function loadAndValidateInput(
   opts: Pick<SeedCommandOptions, "input" | "sessionKey" | "strictRoundRole">,
 ): LoadAndValidateResult {
   // Layer 1: File — read + parse
+  // 中文：层级1：文件 — 读取 + 解析
   const raw = loadRawInput(opts.input);
 
   // Layer 2: Top-level — detect A vs B
+  // 中文：层级2：高级别 — 检测A vs B
   const sessions = extractSessions(raw);
 
   // Layers 3-5: session / round / message validation
+  // 中文：层级3-5：会话 / 轮次 / 消息验证
   const errors: ValidationError[] = [];
   validateSessions(sessions, opts.strictRoundRole, errors);
 
@@ -57,6 +72,7 @@ export function loadAndValidateInput(
   }
 
   // Layer 6: Timestamp consistency (all-have / all-missing / mixed → error)
+  // 中文：层6：时间戳一致性（全部存在/全部缺失/混合 → 错误）
   const tsResult = checkTimestampConsistency(sessions);
   if (tsResult.status === "mixed") {
     throw new SeedValidationError([{
@@ -68,6 +84,7 @@ export function loadAndValidateInput(
   }
 
   // Normalize
+  // 中文：归一化
   const normalized = normalizeSessions(sessions, opts.sessionKey);
 
   return {
@@ -90,6 +107,10 @@ export function loadAndValidateInput(
  * confirmation needed in HTTP context).
  *
  * Throws `SeedValidationError` on validation failures.
+ * 中文：验证并归一化已解析的JSON对象作为种子输入。
+ * 这是`loadAndValidateInput`的友好入口版本——跳过了文件系统层（第1层），直接接受原始解析体。
+ * 所有消息中缺少的时间戳将自动填充（无需HTTP上下文中的交互确认）。
+ * 在验证失败时抛出`SeedValidationError`。
  */
 export function validateAndNormalizeRaw(
   raw: unknown,
@@ -99,9 +120,11 @@ export function validateAndNormalizeRaw(
   const autoFillTimestamps = opts?.autoFillTimestamps ?? true;
 
   // Layer 2: Top-level — detect A vs B
+  // 中文：层2：顶级 — 检测A vs B
   const sessions = extractSessions(raw);
 
   // Layers 3-5: session / round / message validation
+  // 中文：层3-5：会话/轮次/消息验证
   const errors: ValidationError[] = [];
   validateSessions(sessions, strictRoundRole, errors);
 
@@ -110,6 +133,7 @@ export function validateAndNormalizeRaw(
   }
 
   // Layer 6: Timestamp consistency
+  // 中文：层6：时间戳一致性
   const tsResult = checkTimestampConsistency(sessions);
   if (tsResult.status === "mixed") {
     throw new SeedValidationError([{
@@ -121,6 +145,7 @@ export function validateAndNormalizeRaw(
   }
 
   // Normalize
+  // 中文：归一化
   const normalized = normalizeSessions(sessions, opts?.sessionKey);
 
   const input: NormalizedInput = {
@@ -131,6 +156,7 @@ export function validateAndNormalizeRaw(
   };
 
   // Auto-fill timestamps in HTTP context (no interactive prompt)
+  // 中文：在HTTP上下文中自动填充时间戳（无需交互提示）
   if (tsResult.status === "all_missing" && autoFillTimestamps) {
     fillTimestamps(input);
   }
@@ -146,6 +172,9 @@ export function validateAndNormalizeRaw(
  * sessions share the same sessionKey — the L0 capture cursor (advanced
  * per-session) would filter out later sessions whose timestamps fall
  * below the cursor if ordering were not globally monotonic.
+ * 中文：为输入没有时间戳的所有消息填充时间戳。
+ * 使用单个单调递增的计数器跨所有会话
+ * 保证全局时间戳顺序。这对于多个会话共享同一sessionKey时至关重要——L0捕获光标（按会话独立推进）将过滤掉时间戳低于光标的后续会话，如果时间戳顺序不是全局单调递增，则会导致错误。
  */
 export function fillTimestamps(input: NormalizedInput): void {
   let currentTs = Date.now();
@@ -153,6 +182,7 @@ export function fillTimestamps(input: NormalizedInput): void {
     for (const round of session.rounds) {
       for (let i = 0; i < round.messages.length; i++) {
         // Small offset per message to maintain strict ordering
+        // 中文：为每个消息维护严格的时间顺序偏移量
         round.messages[i]!.timestamp = currentTs;
         currentTs += 100;
       }
@@ -164,6 +194,7 @@ export function fillTimestamps(input: NormalizedInput): void {
 // ============================
 // Validation error class
 // ============================
+// 中文：验证错误类
 
 export class SeedValidationError extends Error {
   public readonly errors: ValidationError[];
@@ -189,6 +220,7 @@ function formatValidationError(e: ValidationError): string {
 // ============================
 // Layer 1: File loading
 // ============================
+// 中文：第一层：文件加载
 
 function loadRawInput(filePath: string): unknown {
   if (!fs.existsSync(filePath)) {
@@ -219,9 +251,11 @@ function loadRawInput(filePath: string): unknown {
 // ============================
 // Layer 2: Top-level format detection
 // ============================
+// 中文：第二层：顶级格式检测
 
 function extractSessions(raw: unknown): RawSession[] {
   // Format A: { sessions: [...] }
+  // 中文：格式A：{ sessions: [...] }
   if (
     raw != null &&
     typeof raw === "object" &&
@@ -239,6 +273,7 @@ function extractSessions(raw: unknown): RawSession[] {
   }
 
   // Format B: [...]
+  // 中文：格式B：[...]
   if (Array.isArray(raw)) {
     return raw as RawSession[];
   }
@@ -255,6 +290,7 @@ function extractSessions(raw: unknown): RawSession[] {
 // ============================
 // Layers 3-5: session / round / message validation
 // ============================
+// 中文：第三层至第五层：会话/轮次/消息验证
 
 function validateSessions(
   sessions: RawSession[],
@@ -273,6 +309,7 @@ function validateSessions(
     const session = sessions[si]!;
 
     // Layer 3: session validation
+    // 中文：层3：会话验证
     if (!session.sessionKey || typeof session.sessionKey !== "string" || session.sessionKey.trim() === "") {
       errors.push({
         stage: "session",
@@ -289,13 +326,16 @@ function validateSessions(
         message: '"conversations" must be a two-dimensional array (array of rounds).',
       });
       continue; // Can't validate rounds
+      // 中文：无法验证轮次
     }
 
     // Check that conversations is a 2D array
+    // 中文：检查conversations是否为二维数组
     for (let ri = 0; ri < session.conversations.length; ri++) {
       const round = session.conversations[ri];
 
       // Layer 4: round validation
+      // 中文：层4：轮次验证
       if (!Array.isArray(round)) {
         errors.push({
           stage: "round",
@@ -319,6 +359,7 @@ function validateSessions(
       }
 
       // Strict round-role: each round must have at least one user and one assistant
+      // 中文：严格轮次角色：每一轮必须至少有一个用户和一个助手
       if (strictRoundRole) {
         const roles = new Set(round.map((m) => m.role));
         if (!roles.has("user")) {
@@ -342,6 +383,7 @@ function validateSessions(
       }
 
       // Layer 5: message validation
+      // 中文：层5：消息验证
       for (let mi = 0; mi < round.length; mi++) {
         const msg = round[mi]!;
 
@@ -409,6 +451,7 @@ function validateSessions(
 // ============================
 // Layer 6: Timestamp consistency
 // ============================
+// 中文：层6：时间戳一致性
 
 interface TimestampCheckResult {
   status: "all_present" | "all_missing" | "mixed";
@@ -429,6 +472,7 @@ function checkTimestampConsistency(sessions: RawSession[]): TimestampCheckResult
           missingTs = true;
         }
         // Early exit on mixed
+        // 中文：早期退出混合情况
         if (hasTs && missingTs) {
           return { status: "mixed" };
         }
@@ -439,12 +483,14 @@ function checkTimestampConsistency(sessions: RawSession[]): TimestampCheckResult
   if (hasTs && !missingTs) return { status: "all_present" };
   if (!hasTs && missingTs) return { status: "all_missing" };
   // No messages at all — treat as all_missing (will be caught by session validation)
+  // 中文：没有任何消息——视为all_missing（将在会话验证中被捕获）
   return { status: "all_missing" };
 }
 
 // ============================
 // Normalization
 // ============================
+// 中文：归一化
 
 function normalizeSessions(
   sessions: RawSession[],
@@ -468,6 +514,7 @@ function normalizeSessions(
         role: msg.role,
         content: msg.content,
         // Normalize timestamp: ISO string → epoch ms, number → pass-through, missing → 0 (filled later)
+        // 中文：归一化时间戳：ISO字符串→毫秒时间戳，数字→通过传递，缺失→0（稍后填充）
         timestamp: msg.timestamp == null
           ? 0
           : typeof msg.timestamp === "string"

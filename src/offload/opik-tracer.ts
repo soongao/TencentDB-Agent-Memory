@@ -1,11 +1,14 @@
 /**
  * Opik observability tracer for context offload plugin.
  * Wraps the opik npm package with graceful degradation when not installed.
+ * 中文：opik可观测性跟踪器用于上下文卸载插件。
+ * 使用opik npm包，并在未安装时提供优雅降级。
  */
 import type { PluginLogger } from "./types.js";
 import { getEnv } from "../utils/env.js";
 
 // Opik client types (minimal shape to avoid hard dependency)
+// 中文：opik客户端类型（最小形状以避免硬依赖）
 interface OpikClient {
   trace(params: Record<string, unknown>): OpikTrace;
   flush(): Promise<void>;
@@ -94,9 +97,11 @@ export function initOffloadOpikTracer(
     const cfg = getOpikConfigFromOpenClawConfig(openClawConfig);
     if (!cfg.enabled) return;
     // Dynamic import — graceful when opik is not installed
+    // 中文：动态导入——未安装opik时表现优雅
     let OpikConstructor: new (params: Record<string, unknown>) => OpikClient;
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
+      // 中文：eslint-disable-next-line @typescript-eslint/no-require-imports
       const opikModule = require("opik") as { Opik: new (params: Record<string, unknown>) => OpikClient };
       OpikConstructor = opikModule.Opik;
     } catch {
@@ -174,6 +179,8 @@ export function traceOffloadDecision(params: {
 /**
  * Serialize a single message into a diagnostic object for tracing.
  * Outputs full content text (no truncation) for debugging purposes.
+ * 中文：将单条消息序列化为诊断对象进行跟踪。
+ * 输出完整的内容文本（不截断）用于调试目的。
  */
 function serializeMessageForTrace(msg: any, index: number): Record<string, unknown> {
   const role = msg.role ?? msg.message?.role ?? msg.type ?? "unknown";
@@ -226,6 +233,8 @@ function serializeMessageForTrace(msg: any, index: number): Record<string, unkno
 /**
  * Trace a full messages snapshot — used for debugging message state at key points.
  * Creates a separate "messages-snapshot" category trace.
+ * 中文：记录完整的消息快照——用于在关键点调试消息状态。
+ * 创建单独的"messages-snapshot"类别跟踪。
  */
 export function traceMessagesSnapshot(params: {
   sessionKey?: string | null;
@@ -246,6 +255,7 @@ export function traceMessagesSnapshot(params: {
     const serialized = msgs.map((m, i) => serializeMessageForTrace(m, i));
 
     // Aggregate stats
+    // 中文：聚合统计
     const mmdCount = msgs.filter((m: any) => m._mmdContextMessage || m._mmdInjection).length;
     const offloadedCount = msgs.filter((m: any) => m._offloaded).length;
     const roleBreakdown: Record<string, number> = {};

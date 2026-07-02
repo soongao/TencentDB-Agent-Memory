@@ -230,6 +230,7 @@ function printHelp(): void {
 // ============================================================
 // VDB HTTP Client
 // ============================================================
+// 中文：VDB HTTP客户端
 
 class VDBClient {
   private baseUrl: string;

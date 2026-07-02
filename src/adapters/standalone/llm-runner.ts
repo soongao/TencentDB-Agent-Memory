@@ -14,6 +14,14 @@
  *   When tools are enabled, three basic file operations are exposed:
  *   `read_file`, `write_to_file`, `replace_in_file`.
  *   All file paths are resolved relative to `workspaceDir`, enforcing sandbox boundaries.
+ * 中文：StandaloneLLMRunner — 由 Vercel AI SDK (`ai` + `@ai-sdk/openai`) 驱动。
+ * 此运行器不依赖于 OpenClaw 的 `runEmbeddedPiAgent`。它为 Hermes Gateway 场景设计，其中 TDAI 作为一个独立的 Node.js 边车运行在没有 OpenClaw 主机的情况下。
+ * 功能:
+ * - `enableTools: false`: 纯文本输出（L1 提取、L1 去重）
+ * - `enableTools: true`: 通过 AI SDK 的 `maxSteps` 实现本地文件操作的自动工具调用循环（L2 场景、L3 人物）
+ * 工具沙盒:
+ * 当启用工具时，暴露了三种基本文件操作:`read_file`, `write_to_file`, `replace_in_file`。
+ * 所有文件路径相对于 `workspaceDir` 解析，以确保沙盒边界。
  */
 
 import fsPromises from "node:fs/promises";
@@ -33,22 +41,29 @@ import type {
 const TAG = "[memory-tdai] [standalone-runner]";
 
 // Max iterations in the tool-call loop to prevent infinite loops
+// 中文：工具调用循环中的最大迭代次数，防止无限循环
 const MAX_TOOL_ITERATIONS = 20;
 
 // ============================
 // Configuration
 // ============================
+// 中文：配置
 
 export interface StandaloneLLMConfig {
   /** OpenAI-compatible API base URL (e.g. "https://api.openai.com/v1"). */
+  /** 中文：与 OpenAI 兼容的 API 基础 URL（例如: "https://api.openai.com/v1"）。 */
   baseUrl: string;
   /** API key for authentication. */
+  /** 中文：用于身份验证的 API 密钥。 */
   apiKey: string;
   /** Default model name (e.g. "gpt-4o"). */
+  /** 中文：默认模型名称（例如: "gpt-4o"）。 */
   model: string;
   /** Default max output tokens. */
+  /** 中文：默认最大输出标记数。 */
   maxTokens?: number;
   /** Request timeout in milliseconds (default: 120_000). */
+  /** 中文：请求超时时间，单位为毫秒（默认值: 120_000） */
   timeoutMs?: number;
   /**
    * Controls how thinking/reasoning is disabled for the LLM endpoint.
@@ -58,6 +73,13 @@ export interface StandaloneLLMConfig {
    * - `"openai"`: reasoning_effort: "low"
    * - `"anthropic"` / `"kimi"`: thinking: { type: "disabled" }
    * - `"gemini"`: thinking_config: { thinking_budget: 0 }
+   * 中文：控制LLM端点禁用思考/推理的方式。
+   * - `false`（默认）：无思考禁用包装
+   * - `"vllm"`：vLLM/SGLang chat_template_kwargs
+   * - `"deepseek"` / `"dashscope"`：顶层 enable_thinking: false
+   * - `"openai"`：reasoning_effort: "low"
+   * - `"anthropic"` / `"kimi"`：thinking: { type: "disabled" }
+   * - `"gemini"`：thinking_config: { thinking_budget: 0 }
    */
   disableThinking?: DisableThinkingStrategy;
 }
@@ -65,6 +87,7 @@ export interface StandaloneLLMConfig {
 // ============================
 // Sandboxed tool execution helpers
 // ============================
+// 中文：沙箱工具执行辅助函数
 
 function resolveSandboxedPath(workspaceDir: string, relativePath: string): string | null {
   const resolved = path.resolve(workspaceDir, relativePath);
@@ -77,6 +100,7 @@ function resolveSandboxedPath(workspaceDir: string, relativePath: string): strin
 // ============================
 // Tool definitions (Vercel AI SDK `tool()` format)
 // ============================
+// 中文：工具定义（Vercel AI SDK `tool()` 格式）
 
 function createSandboxedTools(workspaceDir: string, logger?: Logger) {
   return {
@@ -163,6 +187,7 @@ function createSandboxedTools(workspaceDir: string, logger?: Logger) {
 // ============================
 // StandaloneLLMRunner
 // ============================
+// 中文：StandaloneLLMRunner
 
 export class StandaloneLLMRunner implements LLMRunner {
   private config: StandaloneLLMConfig;
@@ -200,6 +225,9 @@ export class StandaloneLLMRunner implements LLMRunner {
     // Create OpenAI-compatible provider via AI SDK
     // Use "compatible" mode to call /chat/completions (not Responses API),
     // which works with all OpenAI-compatible backends (DeepSeek, Qwen, etc.)
+    // 中文：通过AI SDK创建OpenAI兼容的提供者
+    // 使用“兼容”模式调用 /chat/completions（不是 Responses API），
+    // 与所有OpenAI兼容后端（DeepSeek、Qwen等）兼容
     const provider = createOpenAI({
       baseURL: this.config.baseUrl,
       apiKey: this.config.apiKey,
@@ -208,6 +236,7 @@ export class StandaloneLLMRunner implements LLMRunner {
     });
 
     // For pure text tasks like L1 extraction, avoid exposing any tools.
+    // 中文：对于像L1提取这样的纯文本任务，避免暴露任何工具。
     const tools = this.enableTools
       ? createSandboxedTools(workspaceDir, this.logger)
       : undefined;
@@ -231,6 +260,7 @@ export class StandaloneLLMRunner implements LLMRunner {
       );
 
       // Log tool usage if any
+      // 中文：如果使用任何工具，则记录工具使用情况
       if (result.steps.length > 1) {
         const toolCalls = result.steps.flatMap((s) => s.toolCalls ?? []);
         this.logger?.debug?.(
@@ -239,6 +269,7 @@ export class StandaloneLLMRunner implements LLMRunner {
       }
 
       // Metric
+      // 中文：指标
       if (params.instanceId) {
         report("llm_call", {
           taskId: params.taskId,
@@ -279,11 +310,14 @@ export class StandaloneLLMRunner implements LLMRunner {
 // ============================
 // StandaloneLLMRunnerFactory
 // ============================
+// 中文：StandaloneLLMRunnerFactory
 
 export interface StandaloneLLMRunnerFactoryOptions {
   /** LLM API configuration. */
+  /** 中文：LLM API配置. */
   config: StandaloneLLMConfig;
   /** Logger instance. */
+  /** 中文：Logger实例. */
   logger?: Logger;
 }
 
@@ -291,6 +325,7 @@ export interface StandaloneLLMRunnerFactoryOptions {
  * Factory that creates StandaloneLLMRunner instances.
  *
  * Used by the Gateway and Hermes host adapters.
+ * 中文：用于Gateway和Hermes宿主适配器创建StandaloneLLMRunner实例的工厂。
  */
 export class StandaloneLLMRunnerFactory implements LLMRunnerFactory {
   private config: StandaloneLLMConfig;
@@ -306,6 +341,7 @@ export class StandaloneLLMRunnerFactory implements LLMRunnerFactory {
     const modelRef = opts?.modelRef;
 
     // Parse "provider/model" → just use the model part for OpenAI-compatible API
+    // 中文：解析"provider/model"→仅使用model部分以兼容OpenAI API
     let model = this.config.model;
     if (modelRef) {
       const slashIdx = modelRef.indexOf("/");

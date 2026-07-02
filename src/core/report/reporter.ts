@@ -13,6 +13,7 @@ export interface IReporter {
 }
 
 // ── Singleton ──
+// 中文：── Singleton ──
 
 let _reporter: IReporter | undefined;
 
@@ -30,6 +31,7 @@ export function initReporter(opts: {
       _reporter = new LocalReporter(opts.logger, opts.instanceId, opts.pluginVersion);
       break;
     // TODO: add new reporter type
+    // 中文：TODO: 添加新的报告器类型
     default:
       opts.logger.debug?.(`[memory-tdai] Unknown reporter type "${opts.type}", disabled reporting`);
       break;
@@ -43,6 +45,8 @@ export function setReporter(reporter: IReporter): void {
 /**
  * Reset the reporter singleton so that the next `initReporter` call takes effect.
  * Must be called at plugin re-registration (hot-reload) to pick up config changes.
+ * 中文：重置报告器单例，以便下次 `initReporter` 调用生效。
+ * 必须在插件重新注册（热加载）时调用以拾取配置更改。
  */
 export function resetReporter(): void {
   _reporter = undefined;
@@ -53,9 +57,11 @@ export function report(event: string, data: ReportPayload): void {
   try {
     _reporter.reportFunc(REPORT_CONST.PLUGIN, { event, ...data });
   } catch { /* never block business logic */ }
+  // 中文：不要阻塞业务逻辑
 }
 
 // ── LocalReporter (default) ──
+// 中文：── LocalReporter （默认） ──
 
 class LocalReporter implements IReporter {
   constructor(
@@ -76,10 +82,12 @@ class LocalReporter implements IReporter {
         ...payload,
       }));
     } catch { /* swallow */ }
+    // 中文：吞下异常
   }
 }
 
 // ── Instance ID (persisted per-install) ──
+// 中文：── 实例 ID （每安装持久化） ──
 
 let _instanceIdCache: string | undefined;
 
@@ -94,6 +102,7 @@ export async function getOrCreateInstanceId(pluginDataDir: string): Promise<stri
       return existing;
     }
   } catch { /* file doesn't exist */ }
+  // 中文：文件不存在
 
   const newId = randomUUID();
   await fs.mkdir(path.dirname(idFile), { recursive: true });

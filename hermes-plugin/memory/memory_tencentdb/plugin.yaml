@@ -7,6 +7,7 @@ hooks:
   - on_session_end
 # Legacy provider name — kept so that users whose config still says
 # `memory.provider: tdai` continue to resolve to this provider.
+# 中文：遗留的提供者名称——为了使配置仍为`memory.provider: tdai`的用户能够继续解析到此提供者
 aliases:
   - tdai
   - memory-tencentdb

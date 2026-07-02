@@ -102,6 +102,7 @@ if [ -d "$MEMORY_DIR" ]; then
   [ -f "$MEMORY_DIR/persona.md" ] && cp "$MEMORY_DIR/persona.md" "$EXPORT_DIR/memory-tdai/" 2>/dev/null || true
 
   # checkpoint + scene_index
+  # 中文：checkpoint + scene_index
   if [ -d "$MEMORY_DIR/.metadata" ]; then
     cp -r "$MEMORY_DIR/.metadata/" "$EXPORT_DIR/memory-tdai/.metadata/" 2>/dev/null || true
   fi

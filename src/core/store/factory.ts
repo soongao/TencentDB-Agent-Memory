@@ -5,6 +5,10 @@
  * Supports:
  * - "sqlite" (default): local SQLite + sqlite-vec + FTS5
  * - "tcvdb": Tencent Cloud VectorDB (server-side embedding + hybridSearch)
+ * 中文：存储工厂——根据插件配置创建合适的存储后端和嵌入式服务。
+ * 支持：
+ * - "sqlite"（默认）：本地SQLite + sqlite-vec + FTS5
+ * - "tcvdb"：腾讯云向量数据库（服务器端嵌入+混合搜索）
  */
 
 import path from "node:path";
@@ -18,6 +22,7 @@ import { createBM25Encoder } from "./bm25-local.js";
 import type { BM25LocalEncoder } from "./bm25-local.js";
 
 // Re-export for convenience
+// 中文：方便地重新导出
 export type { IMemoryStore, IEmbeddingService, StoreLogger, BM25LocalEncoder };
 
 const TAG = "[memory-tdai][factory]";
@@ -27,6 +32,7 @@ export interface StoreBundle {
   embedding: IEmbeddingService;
   bm25Encoder?: BM25LocalEncoder;
   /** Snapshot of current store config for manifest writing. */
+  /** 中文：当前存储配置的快照，用于manifest编写。 */
   storeSnapshot: import("../../utils/manifest.js").StoreConfigSnapshot;
 }
 
@@ -37,6 +43,10 @@ export interface StoreBundle {
  * @param config       Fully resolved plugin config.
  * @param options.dataDir    Plugin data directory.
  * @param options.logger     Logger instance.
+ * 中文：根据插件配置创建存储后端、嵌入式服务和可选的BM25编码器。
+ * @param config       完全解析的插件配置。
+ * @param options.dataDir    插件数据目录。
+ * @param options.logger     日志实例。
  */
 export function createStoreBundle(
   config: MemoryTdaiConfig,
@@ -45,6 +55,7 @@ export function createStoreBundle(
   const { logger } = options;
 
   // ── BM25 local encoder ──
+  // 中文：── 本地BM25编码器 ──
   const bm25Encoder = createBM25Encoder(config.bm25, logger);
 
   switch (config.storeBackend) {
@@ -90,6 +101,7 @@ export function createStoreBundle(
     case "sqlite":
     default: {
       // ── Embedding service (only when enabled) ──
+      // 中文：── 嵌入式服务（仅当启用时） ──
       let embeddingService: EmbeddingService | undefined;
       if (config.embedding.enabled && config.embedding.provider !== "local" && config.embedding.apiKey) {
         embeddingService = createEmbeddingService({
@@ -104,6 +116,7 @@ export function createStoreBundle(
       }
 
       // dimensions from config (0 when provider="none" → vec0 deferred)
+      // 中文：从配置中获取维度（当provider="none"时为0 → vec0延迟处理）
       const dims = config.embedding.dimensions;
       const dbPath = path.join(options.dataDir, "vectors.db");
       const store = new VectorStore(dbPath, dims, logger);

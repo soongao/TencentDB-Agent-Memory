@@ -1,5 +1,6 @@
 /**
  * Scene Index: maintains a JSON index of all scene blocks for quick lookup.
+ * 中文：场景索引：维护所有场景块的JSON索引以实现快速查找。
  */
 
 import fs from "node:fs/promises";
@@ -19,6 +20,9 @@ export interface SceneIndexEntry {
  *
  * The index is written exclusively by syncSceneIndex() (engineering side).
  * The LLM is sandboxed to scene_blocks/ and cannot access this file.
+ * 中文：从磁盘读取场景索引。
+ * 该索引仅由syncSceneIndex()（工程侧）独占写入。
+ * LLM被沙盒限制在scene_blocks/目录下，无法访问此文件。
  */
 export async function readSceneIndex(dataDir: string): Promise<SceneIndexEntry[]> {
   const indexPath = path.join(dataDir, ".metadata", "scene_index.json");
@@ -50,6 +54,7 @@ export async function readSceneIndex(dataDir: string): Promise<SceneIndexEntry[]
 
 /**
  * Write the scene index to disk.
+ * 中文：将场景索引写入磁盘。
  */
 export async function writeSceneIndex(
   dataDir: string,
@@ -62,6 +67,7 @@ export async function writeSceneIndex(
 
 /**
  * Rebuild scene index by scanning all .md files in the scene_blocks directory.
+ * 中文：通过扫描scene_blocks目录下的所有.md文件重建场景索引。
  */
 export async function syncSceneIndex(dataDir: string): Promise<SceneIndexEntry[]> {
   const blocksDir = path.join(dataDir, "scene_blocks");
@@ -87,6 +93,7 @@ export async function syncSceneIndex(dataDir: string): Promise<SceneIndexEntry[]
     } catch {
       // File may have been deleted between readdir and readFile (e.g. by concurrent
       // SceneExtractor soft-delete). Skip it and continue syncing the rest.
+      // 中文：文件可能已在readdir和readFile之间被删除（例如由并发的SceneExtractor软删除）。跳过该文件并继续同步其余部分。
       continue;
     }
   }

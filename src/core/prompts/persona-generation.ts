@@ -4,6 +4,7 @@
  *
  * v3: Split into systemPrompt (role + constraints + logic + template) and
  * userPrompt (data). Tool names aligned to OpenClaw actual API (write/edit).
+ * 中文：人设生成提示 — 指令LLM使用四层深度扫描模型生成/更新用户人设。
  */
 
 export interface PersonaPromptParams {
@@ -16,8 +17,10 @@ export interface PersonaPromptParams {
   existingPersona?: string;
   triggerInfo?: string;
   /** @deprecated Kept for call-site compatibility; no longer used in prompt. */
+  /** 中文：@deprecated 保留兼容调用点；不再用于提示。 */
   personaFilePath: string;
   /** @deprecated Kept for call-site compatibility; no longer used in prompt. */
+  /** 中文：@deprecated 保留兼容调用点；不再用于提示。 */
   checkpointPath: string;
 }
 
@@ -29,6 +32,7 @@ export interface PersonaPromptResult {
 // ============================
 // System Prompt (stable: role + constraints + logic + template)
 // ============================
+// 中文：系统提示（稳定：角色 + 约束 + 逻辑 + 模板）
 
 const PERSONA_SYSTEM_PROMPT = `# 🧬 Persona Architect - Incremental Evolution Protocol
 
@@ -146,6 +150,7 @@ const PERSONA_SYSTEM_PROMPT = `# 🧬 Persona Architect - Incremental Evolution 
 // ============================
 // User Prompt builder (dynamic data)
 // ============================
+// 中文：用户提示构建器（动态数据）
 
 export function buildPersonaPrompt(params: PersonaPromptParams): PersonaPromptResult {
   const {

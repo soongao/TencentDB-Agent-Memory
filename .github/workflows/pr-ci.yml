@@ -5,12 +5,14 @@ on:
     branches: [main]
 
 # Cancel previous runs for the same PR / branch
+# 中文：取消同一PR/分支的先前运行
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   # ── 1. Install dependencies ────────────────────────────────
+  # 中文：── 1. 安装依赖 ────────────────────────────────
   install:
     name: Install
     runs-on: ubuntu-latest
@@ -33,6 +35,7 @@ jobs:
         run: npm install --ignore-scripts
 
   # ── 2. Pack validation ─────────────────────────────────────
+  # 中文：── 2. 包验证 ─────────────────────────────────────
   pack:
     name: Pack
     needs: install
@@ -64,6 +67,7 @@ jobs:
           retention-days: 7
 
   # ── 5. Plugin manifest validation ──────────────────────────
+  # 中文：── 5. 插件清单验证 ──────────────────────────
   manifest:
     name: Manifest
     runs-on: ubuntu-latest
@@ -105,6 +109,7 @@ jobs:
           "
 
   # ── 6. Package size guard ──────────────────────────────────
+  # 中文：── 6. 包大小防护 ──────────────────────────────────
   size:
     name: Size Guard
     needs: pack

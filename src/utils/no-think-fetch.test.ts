@@ -10,6 +10,7 @@ import {
  * Capture the (input, init) passed through to the real global fetch so we can
  * assert on the (possibly rewritten) request body. The mock never blindly
  * JSON.parses the body — it just records and returns a stub Response.
+ * 中文：捕获传递给真实全局fetch的(input, init)，以便我们可以断言(可能被重写的)请求体。模拟不会盲目地对body进行JSON解析——它只是记录并返回一个占位Response.
  */
 function captureFetch() {
   const calls: Array<{ input: unknown; init: RequestInit | undefined }> = [];
@@ -26,6 +27,7 @@ afterEach(() => {
 
 describe("createNoThinkFetch", () => {
   // ─── vllm strategy (original behavior) ────────────────────────────────────
+  // 中文：──── vllm 策略（原始行为） ────────────────────────────────────
 
   describe("vllm strategy", () => {
     it("injects chat_template_kwargs.enable_thinking=false into chat bodies", async () => {
@@ -67,6 +69,7 @@ describe("createNoThinkFetch", () => {
   });
 
   // ─── deepseek strategy ───────────────────────────────────────────────────
+  // 中文：──── deepseek 策略 ─────────────────────────────────────────────────
 
   describe("deepseek strategy", () => {
     it("injects top-level enable_thinking: false", async () => {
@@ -86,6 +89,7 @@ describe("createNoThinkFetch", () => {
   });
 
   // ─── dashscope strategy ─────────────────────────────────────────────────
+  // 中文：──── dashscope 策略 ─────────────────────────────────────────────────
 
   describe("dashscope strategy", () => {
     it("injects top-level enable_thinking: false", async () => {
@@ -104,6 +108,7 @@ describe("createNoThinkFetch", () => {
   });
 
   // ─── openai strategy ────────────────────────────────────────────────────
+  // 中文：──── openai 策略 ────────────────────────────────────────────────────
 
   describe("openai strategy", () => {
     it("injects reasoning_effort: low", async () => {
@@ -123,6 +128,7 @@ describe("createNoThinkFetch", () => {
   });
 
   // ─── anthropic strategy ─────────────────────────────────────────────────
+  // 中文：──── anthropic 策略 ─────────────────────────────────────────────────
 
   describe("anthropic strategy", () => {
     it("injects thinking: { type: disabled }", async () => {
@@ -141,6 +147,7 @@ describe("createNoThinkFetch", () => {
   });
 
   // ─── kimi strategy ─────────────────────────────────────────────────────
+  // 中文：──── kimi 策略 ─────────────────────────────────────────────────────
 
   describe("kimi strategy", () => {
     it("injects thinking: { type: disabled }", async () => {
@@ -160,6 +167,7 @@ describe("createNoThinkFetch", () => {
   });
 
   // ─── gemini strategy ────────────────────────────────────────────────────
+  // 中文：──── gemini 策略 ────────────────────────────────────────────────────
 
   describe("gemini strategy", () => {
     it("injects thinking_config: { thinking_budget: 0 }", async () => {
@@ -178,6 +186,7 @@ describe("createNoThinkFetch", () => {
   });
 
   // ─── strategy === false (passthrough) ───────────────────────────────────
+  // 中文：─── strategy === false（透传） ───────────────────────────────────
 
   describe("false strategy", () => {
     it("returns globalThis.fetch directly", () => {
@@ -192,6 +201,7 @@ describe("createNoThinkFetch", () => {
   });
 
   // ─── Common behavior across all strategies ──────────────────────────────
+  // 中文：─── 所有策略的常见行为 ──────────────────────────────
 
   describe("common behavior", () => {
     it("forwards a non-JSON string body unchanged", async () => {
@@ -218,6 +228,7 @@ describe("createNoThinkFetch", () => {
 });
 
 // ─── Validation helpers ─────────────────────────────────────────────────────
+// 中文：─── 验证辅助函数 ─────────────────────────────────────────────────────
 
 describe("isValidDisableThinkingStrategy", () => {
   it("returns true for all valid strategies", () => {

@@ -8,6 +8,10 @@
  *
  * The marker property `_mmdContextMessage` is used to locate the message for
  * replacement. L3 compression must skip messages carrying this marker.
+ * 中文：统一的MMD注入器。
+ * 维护一个在event.messages中包含的活跃
+ * MMD（以及历史MMD）。被before_prompt_build（在L1.5判断后全量注入）和after_tool_call（在L2刷新MMD文件期间工具循环中的增量更新）使用。
+ * 标记属性&_mmdContextMessage_用于定位需要替换的消息。L3压缩必须跳过携带此标记的消息。
  */
 import { readMmd, listMmds } from "./storage.js";
 import { PLUGIN_DEFAULTS, type PluginConfig, type PluginLogger } from "./types.js";
@@ -17,9 +21,11 @@ import { isToolResultMessage, isAssistantMessageWithToolUse } from "./l3-helpers
 import type { OffloadStateManager } from "./state-manager.js";
 
 /** Marker property on the injected message object. */
+/** 中文：注入消息对象上的标记属性。 */
 export const MMD_MESSAGE_MARKER = "_mmdContextMessage";
 
 // ─── Public API ──────────────────────────────────────────────────────────────
+// 中文：─── 公共API ──────────────────────────────────────────────────────────────
 
 /**
  * Full inject — called from assemble / before_prompt_build (every user-message round)
@@ -29,6 +35,9 @@ export const MMD_MESSAGE_MARKER = "_mmdContextMessage";
  * History MMDs are NOT injected here — they are only injected by L3 aggressive
  * compression (buildHistoryMmdInjection) after messages are deleted, as a
  * replacement for lost conversation context.
+ * 中文：全量注入 — 被assemble / before_prompt_build（每轮用户消息）和llm_input（每次LLM调用）调用。
+ * 仅注入活跃的MMD（由L1.5决定）。
+ * 历史MMD不在此处注入 — 它们仅在消息被删除后由L3激进压缩（buildHistoryMmdInjection）注入，作为丢失对话上下文的替代。
  */
 export async function injectMmdIntoMessages(
   messages: any[],
@@ -40,6 +49,8 @@ export async function injectMmdIntoMessages(
 ): Promise<{ mmdTokens: number }> {
   // When waitForL15 is set (assemble path), skip injection entirely if L1.5 hasn't settled yet.
   // This preserves any previously injected MMD messages without removing or replacing them.
+  // 中文：当waitForL15设置（assemble路径）时，如果L1.5尚未稳定，则完全跳过注入。
+  // 这会保留任何先前注入的MMD消息而不移除或替换它们。
   if (options?.waitForL15 && !stateManager.l15Settled) {
     logger.debug?.(
       `[context-offload] mmd-injector inject: SKIPPED — L1.5 not settled yet (waitForL15=true), msgs=${messages.length}`,
@@ -93,6 +104,7 @@ export async function injectMmdIntoMessages(
   );
 
   // Summary after active MMD injection (was full dump, now aggregated)
+  // 中文：活跃MMD注入后的摘要（从前是全量导出，现在是聚合）
   if (totalMmdTokens > 0) {
     const mmdCount = messages.filter((m: any) => m[MMD_MESSAGE_MARKER] === "active" || m._mmdInjection).length;
     const offloadedCount = messages.filter((m: any) => m._offloaded).length;
@@ -123,6 +135,7 @@ export async function injectMmdIntoMessages(
 
 /**
  * Incremental update — called from after_tool_call (every tool-loop iteration).
+ * 中文：增量更新 — 被after_tool_call（每次工具循环迭代）调用。
  */
 export async function maybeUpdateMmdInMessages(
   messages: any[],
@@ -169,6 +182,7 @@ export async function maybeUpdateMmdInMessages(
 }
 
 // ─── Insertion point helpers (exported for after-tool-call & llm-input-l3) ──
+// 中文：─── 插入点辅助函数（导出供after-tool-call及llm-input-l3使用） ──
 
 function findLatestUserMessageIndex(messages: any[]): number {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -196,6 +210,11 @@ function findLatestUserMessageIndex(messages: any[]): number {
  * If the candidate position is between an assistant message containing tool_use
  * and its corresponding tool_result(s), shift backwards to before the assistant
  * message so the pair stays intact.
+ * 中文：在活动MMD消息的最佳插入点找到。
+ * 策略：在其后的最新用户消息（对话的后半部分）之后插入，使MMD位于用户的提问和正在进行的工具循环之间——不放在位置0，以免污染最旧的上下文。
+ * 备选方案：如果最新的用户消息在前半部分（在活跃工具循环期间不太可能），则在尾部残留的工具结果/助手块的开头插入，但不超过30条消息从尾部开始。
+ * 重要提示：插入点不得分割tool_call / tool_result配对。
+ * 如果候选位置位于包含tool_use的助手消息及其对应的tool_result之间，则向后移动到该助手消息之前，以保持配对完整。
  */
 export function findActiveMmdInsertionPoint(messages: any[]): number {
   if (messages.length <= 2) return 0;
@@ -228,6 +247,8 @@ export function findActiveMmdInsertionPoint(messages: any[]): number {
   // Guard: don't insert between an assistant tool_use message and its tool_result(s).
   // If the message at insertIdx is a tool_result, walk backwards past the tool_result
   // cluster and the preceding assistant tool_use message.
+  // 中文：保护措施：不要在助手工具_use消息与其工具_result之间插入。
+  // 如果插入Idx的消息是工具_result，请反向走过工具_result群集和前一个助手工具_use消息。
   insertIdx = adjustForToolCallPair(messages, insertIdx);
 
   return insertIdx;
@@ -239,12 +260,16 @@ export function findActiveMmdInsertionPoint(messages: any[]): number {
  *
  * Walk backwards: if we see tool_result messages at `idx`, keep going back;
  * if we then land on an assistant message with tool_use, step before it too.
+ * 中文：调整插入索引，使其不落在包含工具_use的助手消息及其后续工具_result之间。
+ * 反向行走：如果我们看到`idx`处有工具_result消息，则继续后退；如果然后落在包含工具_use的助手消息上，则也向前移动。
  */
 function adjustForToolCallPair(messages: any[], idx: number): number {
   if (idx <= 0 || idx >= messages.length) return idx;
 
   // Check if the message AT idx (or the preceding context) forms a tool pair boundary.
   // Case 1: idx points at a tool_result → we're inside a tool pair, walk back.
+  // 中文：检查索引`idx`（或其前一个上下文）是否形成工具配对边界。
+  // 情况1：`idx`指向tool_result → 我们在工具配对内，向后行走。
   let cur = idx;
   while (cur > 0 && cur < messages.length) {
     const msg = messages[cur];
@@ -255,6 +280,8 @@ function adjustForToolCallPair(messages: any[], idx: number): number {
 
   // After skipping tool_results, check if the message at `cur` is an assistant with tool_use.
   // If so, we must insert BEFORE this assistant message to keep the pair intact.
+  // 中文：跳过工具_result后，检查`cur`处的消息是否为包含工具_use的助手消息。
+  // 如果是，则必须在其之前插入以保持配对完整。
   if (cur >= 0 && cur < messages.length) {
     const msg = messages[cur];
     if (!msg[MMD_MESSAGE_MARKER] && !msg._mmdInjection && isAssistantMessageWithToolUse(msg)) {
@@ -267,6 +294,7 @@ function adjustForToolCallPair(messages: any[], idx: number): number {
   // assistant with tool_use and idx is tool_result, the while-loop above would
   // have caught it. This covers the edge case where idx is right after an assistant
   // tool_use (before any tool_result arrives yet).
+  // 中文：还应检查索引`idx`之前的那条消息 — 如果它是包含工具_use的助手消息，并且`idx`处的消息是tool_result，则已在上面处理。但如果`idx-1`是包含工具_use的助手消息而`idx`是tool_result，上面的while循环会捕获它。这涵盖了`idx`紧随在助手工具_use之后（尚未收到任何tool_result）的情况。
   if (idx > 0 && idx < messages.length) {
     const prevMsg = messages[idx - 1];
     if (!prevMsg[MMD_MESSAGE_MARKER] && !prevMsg._mmdInjection && isAssistantMessageWithToolUse(prevMsg)) {
@@ -278,6 +306,7 @@ function adjustForToolCallPair(messages: any[], idx: number): number {
   }
 
   // If we moved backward, return the adjusted position; otherwise return original.
+  // 中文：如果向后移动，请返回调整后的位置；否则返回原始位置。
   return cur < idx ? cur : idx;
 }
 
@@ -290,13 +319,18 @@ function adjustForToolCallPair(messages: any[], idx: number): number {
  *
  * Unlike active MMD, history MMD should NOT go to index 0 — it should sit in
  * the middle of the conversation, just before the active task context.
+ * 中文：为历史MMD消息找到插入点（在激进删除后注入）。
+ * 策略：在其前插入活动的MMD（如有），或在活动MMD本应出现的位置。历史上下文应在活动上下文之前，以便LLM按时间顺序阅读：历史 → 活动 → 最近的工具循环。
+ * 与活动MMD不同，历史MMD不应放置在索引0处 — 它应该位于对话中间，在活动任务上下文之前。
  */
 export function findHistoryMmdInsertionPoint(messages: any[]): number {
   // If there's an existing active MMD, insert just before it
+  // 中文：如果存在一个现有的活动MMD，在其前插入
   for (let i = 0; i < messages.length; i++) {
     if (messages[i][MMD_MESSAGE_MARKER] === "active") return i;
   }
   // No active MMD — use the same heuristic as active MMD insertion
+  // 中文：没有活动的MMD——使用与活动MMD插入相同的启发式方法
   return findActiveMmdInsertionPoint(messages);
 }
 
@@ -337,6 +371,7 @@ async function buildActiveMmdBlock(
         taskGoal = meta.taskGoal || "";
       } catch {
         /* ignore */
+        /** 中文：忽略 */
       }
     }
     const nodePattern = /\b(\d+-N\d+|N\d+)\b/g;

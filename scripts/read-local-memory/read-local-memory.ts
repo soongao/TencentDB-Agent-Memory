@@ -82,6 +82,9 @@ interface QueryResult<T> {
 // ─────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────
+// 中文：─────────────────────────────────────────────
+// 常量
+// ─────────────────────────────────────────────
 
 const SQLITE_DB_NAME = "vectors.db"
 
@@ -168,6 +171,9 @@ Examples:
 
 // ─────────────────────────────────────────────
 // CLI Argument Parsing
+// ─────────────────────────────────────────────
+// 中文：─────────────────────────────────────────────
+// 命令行参数解析
 // ─────────────────────────────────────────────
 
 function parseCli(): CliOptions {
@@ -291,6 +297,9 @@ function toDate(value: unknown): Date | null {
 
 // ─────────────────────────────────────────────
 // Filter Parsing
+// ─────────────────────────────────────────────
+// 中文：─────────────────────────────────────────────
+// 过滤器解析
 // ─────────────────────────────────────────────
 
 const FILTER_OPERATORS = [">=", "<=", "!=", ">", "<", "="] as const
@@ -512,6 +521,9 @@ function querySqlite(db: DatabaseSync, level: "L0" | "L1", opts: CliOptions): Sq
 // ─────────────────────────────────────────────
 // Query: L0 / L1 (SQLite)
 // ─────────────────────────────────────────────
+// 中文：─────────────────────────────────────────────
+// 查询: L0 / L1 (SQLite)
+// ─────────────────────────────────────────────
 
 function querySqliteLevel(db: DatabaseSync, opts: CliOptions, level: "L0" | "L1") {
   const { total, records: paged } = querySqlite(db, level, opts)
@@ -590,6 +602,7 @@ function displayWidth(str: string): number {
   for (const char of str) {
     const code = char.codePointAt(0)!
     // CJK Unified Ideographs / fullwidth / common CJK ranges
+    // 中文：CJK 统一汉字 / 全角 / 常见CJK范围
     if (
       (code >= 0x4e00 && code <= 0x9fff) ||   // CJK 基本
       (code >= 0x3000 && code <= 0x303f) ||   // CJK 标点
@@ -737,6 +750,9 @@ function renderL1Table(records: Record<string, unknown>[]) {
 // ─────────────────────────────────────────────
 // Query: L2 (Scene Blocks)
 // ─────────────────────────────────────────────
+// 中文：─────────────────────────────────────────────
+// 查询: L2 (场景块)
+// ─────────────────────────────────────────────
 
 function queryL2(opts: CliOptions) {
   const dirPath = path.join(opts.dataDir, LEVEL_DIRS.L2)
@@ -838,6 +854,9 @@ function queryL2(opts: CliOptions) {
 
 // ─────────────────────────────────────────────
 // Query: L3 (Persona)
+// ─────────────────────────────────────────────
+// 中文：─────────────────────────────────────────────
+// 查询: L3 (人物)
 // ─────────────────────────────────────────────
 
 function queryL3(opts: CliOptions) {

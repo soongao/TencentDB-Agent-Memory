@@ -1,0 +1,2120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TencentDB-Agent-Memory 长期记忆网络调试台</title>
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --surface: #ffffff;
+      --surface-soft: #f0f3f7;
+      --surface-warm: #fff7ec;
+      --text: #17202a;
+      --muted: #64748b;
+      --line: #d7dee8;
+      --blue: #1d63d8;
+      --cyan: #19a7ce;
+      --green: #0f856a;
+      --amber: #b76900;
+      --red: #b42318;
+      --violet: #6d4aff;
+      --canvas: #172033;
+      --canvas-line: #27384f;
+      --node: #202c40;
+      --node-border: #52647d;
+      --code: #111827;
+      --code-text: #e5edf7;
+      --shadow: 0 16px 42px rgba(25, 35, 50, 0.08);
+      --radius: 8px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body.theme-dark {
+      --bg: #0b1220;
+      --surface: #111827;
+      --surface-soft: #1b2637;
+      --surface-warm: #281f13;
+      --text: #e5edf7;
+      --muted: #9aa9bc;
+      --line: #29384d;
+      --blue: #60a5fa;
+      --cyan: #22d3ee;
+      --green: #34d399;
+      --amber: #f59e0b;
+      --red: #f87171;
+      --violet: #a78bfa;
+      --canvas: #07111f;
+      --canvas-line: #1a2a40;
+      --node: #111c2d;
+      --node-border: #43546e;
+      --code: #050b14;
+      --code-text: #dbeafe;
+      --shadow: 0 18px 52px rgba(0, 0, 0, 0.28);
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      transition: background 160ms ease, color 160ms ease;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 30;
+    }
+
+    .topbar {
+      max-width: 1520px;
+      margin: 0 auto;
+      padding: 16px 24px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 20px;
+      align-items: center;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .modebar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .top-actions {
+      display: grid;
+      gap: 10px;
+      justify-items: end;
+    }
+
+    .theme-toggle {
+      min-width: 92px;
+      justify-self: end;
+      border-color: var(--line);
+      background: var(--surface-soft);
+    }
+
+    button {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--text);
+      padding: 8px 11px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    button:hover { border-color: var(--blue); }
+    button.active {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #fff;
+    }
+
+    .layout {
+      max-width: 1520px;
+      margin: 0 auto;
+      padding: 20px 24px 34px;
+      display: grid;
+      grid-template-columns: minmax(760px, 1fr) 420px;
+      gap: 18px;
+      align-items: start;
+      transition: grid-template-columns 160ms ease;
+    }
+
+    .layout.sidebar-collapsed {
+      grid-template-columns: minmax(760px, 1fr) 54px;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .network-panel {
+      min-height: calc(100vh - 128px);
+      display: grid;
+      grid-template-rows: auto minmax(560px, 1fr) auto;
+      overflow: hidden;
+    }
+
+    .network-head {
+      padding: 16px 18px 10px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .network-head h2,
+    .detail h2,
+    .mini h2 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      justify-content: flex-end;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 8px;
+      background: var(--surface-soft);
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+
+    .dot.entry { background: var(--blue); }
+    .dot.core { background: var(--violet); }
+    .dot.logic { background: var(--green); }
+    .dot.state { background: var(--amber); }
+    .dot.failure { background: var(--red); }
+
+    .graph-wrap {
+      position: relative;
+      overflow: hidden;
+      cursor: grab;
+      touch-action: none;
+      background:
+        radial-gradient(circle at 22px 22px, rgba(122, 146, 178, 0.28) 1px, transparent 1.6px),
+        linear-gradient(var(--canvas-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--canvas-line) 1px, transparent 1px),
+        var(--canvas);
+      background-size: 44px 44px, 22px 22px, 22px 22px, auto;
+    }
+
+    .graph-wrap.dragging,
+    .graph-wrap.panning {
+      cursor: grabbing;
+      user-select: none;
+    }
+
+    #networkSvg {
+      display: block;
+      min-width: 1180px;
+      min-height: 820px;
+      width: 100%;
+      height: 820px;
+      cursor: inherit;
+    }
+
+    .viewport {
+      transform-box: fill-box;
+      transform-origin: 0 0;
+    }
+
+    .edge {
+      fill: none;
+      stroke: #7790ad;
+      stroke-width: 2;
+      marker-end: url(#arrow);
+      opacity: 0.5;
+    }
+
+    .edge.path {
+      stroke: #6fb6ff;
+      stroke-width: 3.2;
+      marker-end: url(#arrow-active);
+      opacity: 0.95;
+    }
+
+    .edge.related {
+      stroke: #60d4b8;
+      stroke-width: 2.8;
+      opacity: 0.85;
+    }
+
+    .edge.dim { opacity: 0.12; }
+
+    .edge-label {
+      fill: #c8d6e8;
+      font-size: 11px;
+      pointer-events: none;
+      paint-order: stroke;
+      stroke: var(--canvas);
+      stroke-width: 5px;
+      stroke-linejoin: round;
+    }
+
+    .node .node-body {
+      stroke: var(--node-border);
+      stroke-width: 1.4;
+      rx: 8;
+      fill: var(--node);
+      transition: fill 120ms ease, stroke 120ms ease, opacity 120ms ease;
+    }
+
+    .node .node-head {
+      stroke: none;
+      rx: 8;
+      fill: #314158;
+    }
+
+    .node text {
+      fill: #edf4ff;
+      font-size: 12px;
+      pointer-events: none;
+      letter-spacing: 0;
+    }
+
+    .node .node-kind {
+      fill: rgba(237, 244, 255, 0.82);
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .node.entry .node-head { fill: var(--blue); }
+    .node.core .node-head { fill: var(--violet); }
+    .node.logic .node-head { fill: var(--green); }
+    .node.state .node-head { fill: var(--amber); }
+    .node.failure .node-head { fill: var(--red); }
+
+    .node.active .node-body {
+      stroke: #83bdff;
+      stroke-width: 3;
+      filter: drop-shadow(0 0 18px rgba(111, 182, 255, 0.42));
+    }
+
+    .node.related .node-body {
+      stroke: #73d9c2;
+      stroke-width: 2.2;
+    }
+
+    .node.dim {
+      opacity: 0.28;
+    }
+
+    .node:hover .node-body {
+      stroke: #83bdff;
+    }
+
+    .node {
+      cursor: grab;
+    }
+
+    .node:active {
+      cursor: grabbing;
+    }
+
+    .node.dragging .node-body {
+      stroke: #ffffff;
+      stroke-width: 3;
+      filter: drop-shadow(0 0 22px rgba(255, 255, 255, 0.42));
+    }
+
+    .pin {
+      fill: #0f172a;
+      stroke: #c9d8ea;
+      stroke-width: 2;
+    }
+
+    .pin.in { fill: #1d63d8; }
+    .pin.out { fill: #0f856a; }
+    .node.active .pin {
+      stroke: #ffffff;
+      filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.7));
+    }
+
+    .port-label {
+      fill: #aebed2;
+      font-size: 10px;
+    }
+
+    .graph-footer {
+      border-top: 1px solid var(--line);
+      padding: 12px 16px;
+      color: var(--muted);
+      font-size: 13px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .canvas-hint {
+      position: absolute;
+      left: 16px;
+      top: 14px;
+      background: rgba(15, 23, 42, 0.78);
+      color: #dbe8f7;
+      border: 1px solid rgba(219, 232, 247, 0.18);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 12px;
+      pointer-events: none;
+      backdrop-filter: blur(8px);
+    }
+
+    .floating-inspector {
+      position: absolute;
+      z-index: 12;
+      width: 340px;
+      max-width: calc(100% - 32px);
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid rgba(131, 189, 255, 0.75);
+      border-radius: 8px;
+      box-shadow: 0 18px 50px rgba(8, 15, 28, 0.28);
+      overflow: hidden;
+      backdrop-filter: blur(10px);
+    }
+
+    body.theme-dark .floating-inspector {
+      background: rgba(15, 23, 42, 0.96);
+      border-color: rgba(96, 165, 250, 0.72);
+      box-shadow: 0 22px 58px rgba(0, 0, 0, 0.48);
+    }
+
+    .floating-inspector.dragging {
+      user-select: none;
+      box-shadow: 0 22px 60px rgba(8, 15, 28, 0.36);
+    }
+
+    .floating-inspector.hidden {
+      display: none;
+    }
+
+    .floating-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: start;
+      padding: 10px 11px;
+      background: #edf5ff;
+      border-bottom: 1px solid #c7ddfb;
+      cursor: grab;
+      user-select: none;
+    }
+
+    body.theme-dark .floating-head {
+      background: #132238;
+      border-bottom-color: #29415f;
+    }
+
+    .floating-inspector.dragging .floating-head {
+      cursor: grabbing;
+    }
+
+    .floating-head strong {
+      display: block;
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .floating-head span {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 12px;
+      word-break: break-word;
+    }
+
+    .floating-close {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 6px;
+      background: #ffffff;
+    }
+
+    body.theme-dark .floating-close {
+      background: #0b1220;
+      color: var(--text);
+    }
+
+    .floating-tabs {
+      display: flex;
+      gap: 5px;
+      padding: 9px 10px 0;
+      flex-wrap: wrap;
+    }
+
+    .floating-tab {
+      padding: 5px 8px;
+      font-size: 12px;
+      border-radius: 6px;
+    }
+
+    .floating-tab.active {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #ffffff;
+    }
+
+    .floating-body {
+      padding: 10px;
+      max-height: 330px;
+      overflow: auto;
+    }
+
+    .floating-body pre {
+      max-height: 210px;
+      font-size: 11.5px;
+    }
+
+    .floating-callout {
+      margin-bottom: 8px;
+      padding: 8px;
+      border-left: 3px solid var(--blue);
+      background: #f7fbff;
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    body.theme-dark .floating-callout {
+      background: #0d1a2b;
+    }
+
+    .scenario {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      padding: 4px 8px;
+      font-size: 12px;
+      max-width: 100%;
+    }
+
+    .pill code {
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 240px;
+    }
+
+    .side {
+      display: grid;
+      gap: 14px;
+      position: sticky;
+      top: 92px;
+    }
+
+    .side-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      background: #172033;
+      border-color: #172033;
+      color: #ffffff;
+      box-shadow: var(--shadow);
+    }
+
+    .side-toggle:hover {
+      border-color: var(--blue);
+    }
+
+    .side.collapsed {
+      align-self: stretch;
+    }
+
+    .side.collapsed .panel {
+      display: none;
+    }
+
+    .side.collapsed .side-toggle {
+      width: 44px;
+      min-height: 156px;
+      writing-mode: vertical-rl;
+      justify-content: center;
+      padding: 10px 6px;
+      border-radius: 8px;
+    }
+
+    .side.collapsed .side-toggle-icon {
+      display: none;
+    }
+
+    .detail,
+    .mini {
+      padding: 16px;
+    }
+
+    .inspector-kicker {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 5px;
+    }
+
+    .packet {
+      display: grid;
+      gap: 10px;
+    }
+
+    .packet-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 10px;
+    }
+
+    body.theme-dark .packet-card {
+      background: #0f172a;
+    }
+
+    .packet-card h3 {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .state-list {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+
+    .state-chip {
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--amber);
+      border-radius: 7px;
+      background: #fbfcfe;
+      padding: 8px;
+      font-size: 13px;
+    }
+
+    body.theme-dark .state-chip {
+      background: #0f172a;
+    }
+
+    .state-chip.write { border-left-color: var(--green); }
+    .state-chip.read { border-left-color: var(--blue); }
+
+    .meta {
+      display: grid;
+      gap: 9px;
+      margin-top: 12px;
+      font-size: 13px;
+    }
+
+    .meta-row {
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px dashed var(--line);
+    }
+
+    .meta-row:last-child { border-bottom: 0; padding-bottom: 0; }
+    .meta-row strong { color: var(--muted); }
+
+    a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+
+    .tabs {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin: 14px 0 12px;
+    }
+
+    .tab {
+      padding: 7px 10px;
+    }
+
+    .tab.active {
+      background: var(--blue);
+      color: white;
+      border-color: var(--blue);
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: var(--code);
+      color: var(--code-text);
+      border-radius: var(--radius);
+      padding: 12px;
+      line-height: 1.55;
+      font-size: 12px;
+      overflow: auto;
+      max-height: 360px;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+
+    .summary {
+      color: var(--muted);
+      font-size: 14px;
+      margin: 8px 0 0;
+    }
+
+    .neighbor-list {
+      display: grid;
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    .neighbor {
+      border: 1px solid var(--line);
+      background: #fbfcfe;
+      border-radius: 7px;
+      padding: 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .neighbor:hover {
+      border-color: var(--blue);
+      background: #eef5ff;
+    }
+
+    body.theme-dark .neighbor {
+      background: #0f172a;
+    }
+
+    body.theme-dark .neighbor:hover {
+      background: #14243a;
+    }
+
+    .route-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .route {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 8px;
+      align-items: start;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fbfcfe;
+    }
+
+    body.theme-dark .route {
+      background: #0f172a;
+    }
+
+    .route strong {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .route span {
+      font-size: 13px;
+    }
+
+    .small-note {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 10px;
+    }
+
+    @media (max-width: 1180px) {
+      .topbar,
+      .layout,
+      .layout.sidebar-collapsed {
+        grid-template-columns: 1fr;
+      }
+
+      .modebar {
+        justify-content: flex-start;
+      }
+
+      .top-actions {
+        justify-items: start;
+      }
+
+      .layout {
+        padding: 16px;
+      }
+
+      .network-panel {
+        min-height: auto;
+      }
+
+      .side {
+        position: static;
+      }
+
+      .side.collapsed .side-toggle {
+        width: 100%;
+        min-height: auto;
+        writing-mode: horizontal-tb;
+      }
+
+      .side.collapsed .side-toggle-icon {
+        display: inline;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <div>
+        <h1>长期记忆 Blueprint 调试台</h1>
+        <div class="subtitle">节点是可点击模块，左右端口表示输入/输出；点击节点后在 Inspector 中查看数据包、状态和失败分支。</div>
+      </div>
+      <div class="top-actions">
+        <button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false">深色模式</button>
+        <div class="modebar" id="modebar"></div>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout" id="layout">
+    <section class="panel network-panel">
+      <div class="network-head">
+        <div>
+          <h2 id="boardTitle">长期记忆 Blueprint</h2>
+          <p class="summary" id="boardSummary">每个模块都有输入端口和输出端口。点击模块查看数据，拖动空白幕布平移视角；不同链路会切到自己的幕布。</p>
+        </div>
+        <div class="legend">
+          <span><i class="dot entry"></i>入口</span>
+          <span><i class="dot core"></i>门面</span>
+          <span><i class="dot logic"></i>逻辑</span>
+          <span><i class="dot state"></i>状态</span>
+          <span><i class="dot failure"></i>排查</span>
+        </div>
+      </div>
+      <div class="graph-wrap">
+        <div class="canvas-hint">拖动空白处平移幕布；拖动模块可重排当前幕布；点击模块在旁边打开可拖动 Inspector。</div>
+        <svg id="networkSvg" viewBox="0 0 1180 820" role="img" aria-label="长期记忆全局网络图"></svg>
+        <div class="floating-inspector" id="floatingInspector" aria-live="polite"></div>
+      </div>
+      <div class="graph-footer">
+        <div class="scenario">
+          <span class="pill">sessionKey <code>openclaw:chat:ltm-demo-001</code></span>
+          <span class="pill">sessionId <code>chatcmpl-20260701-001</code></span>
+          <span class="pill">userText <code>我最近在拆解 TencentDB-Agent-Memory，重点关注长期记忆...</code></span>
+        </div>
+        <div class="scenario">
+          <button id="fitBtn" type="button">重置幕布</button>
+          <button id="resetBtn" type="button">回到全局</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side" id="side">
+      <button class="side-toggle" id="sideToggle" type="button" aria-expanded="true">
+        <span id="sideToggleLabel">收起侧栏</span>
+        <span class="side-toggle-icon" aria-hidden="true">›</span>
+      </button>
+      <section class="panel detail" id="detail"></section>
+      <section class="panel mini" id="neighbors"></section>
+      <section class="panel mini">
+        <h2>推荐调试路径</h2>
+        <div class="route-list">
+          <div class="route"><strong>读</strong><span>before_prompt_build -> TdaiCore -> auto-recall -> L1/L2/L3 -> Prompt</span></div>
+          <div class="route"><strong>写</strong><span>agent_end -> TdaiCore -> auto-capture -> L0 -> scheduler</span></div>
+          <div class="route"><strong>产物</strong><span>L1 records -> scene_blocks -> scene_index -> persona.md -> 下一轮召回</span></div>
+        </div>
+        <div class="small-note">这张图的目的不是按顺序播放，而是让你随时看见“我点的节点在系统里的上下游”。</div>
+      </section>
+    </aside>
+  </div>
+
+  <script>
+    const nodes = [
+      {
+        id: "user",
+        label: "用户输入",
+        kind: "entry",
+        x: 40,
+        y: 70,
+        file: "index.ts",
+        line: 553,
+        fn: "event.prompt",
+        summary: "当前轮用户输入，是读路径的 query，也是写路径结束后要进入 L0 的原始证据。",
+        input: { userText: "我最近在拆解 TencentDB-Agent-Memory，重点关注长期记忆，先不要讲 offload，回答尽量用中文。" },
+        output: { rawPrompt: "缓存到 pendingOriginalPrompts", query: "传给 performAutoRecall" },
+        reads: ["event.prompt", "event.messages"],
+        writes: ["pendingOriginalPrompts"],
+        failure: "如果 userText 为空，auto-recall 直接跳过 L1 检索，只可能注入 persona/scene。"
+      },
+      {
+        id: "before",
+        label: "before_prompt_build",
+        kind: "entry",
+        x: 230,
+        y: 45,
+        file: "index.ts",
+        line: 553,
+        fn: "api.on(\"before_prompt_build\")",
+        summary: "读路径入口。主 Agent 回答前，插件先尝试召回长期记忆。",
+        input: { sessionKey: "openclaw:chat:ltm-demo-001", rawPrompt: "用户原始输入" },
+        output: { next: "core.handleBeforeRecall(userText, resolvedSessionKey)" },
+        reads: ["cfg.recall.enabled", "ctx.sessionKey", "sessionFilter"],
+        writes: ["pendingOriginalPrompts", "pendingRecallCache", "pendingRecallEndTimestamps"],
+        failure: "没触发时先查 recall.enabled、hook policy、sessionFilter、插件是否注册。"
+      },
+      {
+        id: "coreRecall",
+        label: "TdaiCore\nhandleBeforeRecall",
+        kind: "core",
+        x: 450,
+        y: 45,
+        file: "src/core/tdai-core.ts",
+        line: 248,
+        fn: "handleBeforeRecall(userText, sessionKey)",
+        summary: "宿主无关门面，把 OpenClaw hook 转成长期记忆召回调用。",
+        input: { userText: "用户当前输入", sessionKey: "openclaw:chat:ltm-demo-001" },
+        output: { result: "RecallResult" },
+        reads: ["storeReady", "cfg", "dataDir", "vectorStore", "embeddingService"],
+        writes: [],
+        failure: "vectorStore 为空会影响 L1 检索，但不必然影响 L2/L3 文件注入。"
+      },
+      {
+        id: "recall",
+        label: "performAutoRecallInner",
+        kind: "logic",
+        x: 690,
+        y: 45,
+        file: "src/core/hooks/auto-recall.ts",
+        line: 105,
+        fn: "performAutoRecallInner(params)",
+        summary: "读路径核心。并行概念上聚合 L1 检索、L2 导航、L3 画像。",
+        input: { strategy: "hybrid", maxResults: 5, timeoutMs: 5000 },
+        output: { prependContext: "L1 relevant memories", appendSystemContext: "L2 + L3 + tool guide" },
+        reads: ["l1_records/l1_fts/l1_vec", "persona.md", ".metadata/scene_index.json"],
+        writes: [],
+        failure: "查 searchTiming、persona loaded、scene navigation generated 三段日志。"
+      },
+      {
+        id: "l1Search",
+        label: "L1 检索",
+        kind: "logic",
+        x: 930,
+        y: 20,
+        file: "src/core/hooks/auto-recall.ts",
+        line: 125,
+        fn: "searchMemories(...)",
+        summary: "按当前 userText 检索结构化记忆。选择由 keyword/embedding/hybrid 策略完成，不是 LLM rerank。",
+        input: { cleanText: "关注长期记忆，不看 offload，中文", strategy: "hybrid" },
+        output: { memoryLines: ["[instruction] 用户希望中文回答", "[instruction] 用户关注长期记忆链路"] },
+        reads: ["l1_records", "l1_fts", "l1_vec"],
+        writes: [],
+        failure: "结果为空时查 query 是否太短、scoreThreshold、embedding 是否配置、FTS 是否可用。"
+      },
+      {
+        id: "l2Nav",
+        label: "L2 Scene\nNavigation",
+        kind: "logic",
+        x: 930,
+        y: 140,
+        file: "src/core/hooks/auto-recall.ts",
+        line: 172,
+        fn: "readSceneIndex -> generateSceneNavigation",
+        summary: "不是读取所有 md 正文，而是把 scene_index.json 拼成导航目录，让 LLM 按需 read_file。",
+        input: { scene_index: "{ filename, summary, heat, updated }[]" },
+        output: { sceneNavigation: "包含 Path、热度、Summary 的 Markdown 导航" },
+        reads: [".metadata/scene_index.json"],
+        writes: [],
+        failure: "没有 L2 导航时查 scene_index.json 是否存在，以及 scene_blocks 是否已同步。"
+      },
+      {
+        id: "l3PersonaRead",
+        label: "L3 Persona\n读取",
+        kind: "logic",
+        x: 930,
+        y: 260,
+        file: "src/core/hooks/auto-recall.ts",
+        line: 148,
+        fn: "read persona.md",
+        summary: "读取 persona.md，并 strip 掉 Scene Navigation，只把用户画像正文作为 L3 注入。",
+        input: { path: "<pluginDataDir>/persona.md" },
+        output: { personaContent: "用户偏好中文、链路化、debug 风格说明" },
+        reads: ["persona.md"],
+        writes: [],
+        failure: "新用户没有 persona.md 是正常状态；如果文件为空，会跳过 L3 注入。"
+      },
+      {
+        id: "prompt",
+        label: "Prompt 注入",
+        kind: "entry",
+        x: 690,
+        y: 220,
+        file: "index.ts",
+        line: 599,
+        fn: "return RecallResult",
+        summary: "L1 进入 prependContext；L2/L3 进入 appendSystemContext。主 Agent 会看到这些上下文。",
+        input: { prependContext: "L1 relevant memories", appendSystemContext: "persona + scene navigation" },
+        output: { finalPrompt: "增强后的主 Agent prompt" },
+        reads: ["RecallResult"],
+        writes: ["pendingRecallCache", "pendingRecallEndTimestamps"],
+        failure: "若 result 有值但模型没用，查宿主是否正确处理 prependContext/appendSystemContext。"
+      },
+      {
+        id: "agent",
+        label: "主 Agent 回答",
+        kind: "entry",
+        x: 450,
+        y: 220,
+        file: "index.ts",
+        line: 689,
+        fn: "agent response",
+        summary: "模型基于用户问题和注入的长期记忆作答。此时还没有写入新记忆。",
+        input: { prompt: "用户输入 + L1/L2/L3 上下文" },
+        output: { assistantText: "好的，我会围绕 L0/L1/L2/L3、写入、召回、存储和 pipeline 来讲。" },
+        reads: ["final prompt"],
+        writes: ["event.messages later"],
+        failure: "如果回答跑偏，回看 prompt 节点确认注入内容是否存在。"
+      },
+      {
+        id: "agentEnd",
+        label: "agent_end",
+        kind: "entry",
+        x: 230,
+        y: 300,
+        file: "index.ts",
+        line: 689,
+        fn: "api.on(\"agent_end\")",
+        summary: "写路径入口。主 Agent 成功结束后，插件开始捕获对话。",
+        input: { success: true, messages: "[user, assistant]", sessionKey: "openclaw:chat:ltm-demo-001" },
+        output: { turn: "CompletedTurn" },
+        reads: ["event.success", "event.messages", "pendingOriginalPrompts"],
+        writes: ["report metrics", "cleanup pending timestamps"],
+        failure: "success=false 或 sessionFilter 命中时直接跳过 capture。"
+      },
+      {
+        id: "coreCapture",
+        label: "TdaiCore\nhandleTurnCommitted",
+        kind: "core",
+        x: 450,
+        y: 360,
+        file: "src/core/tdai-core.ts",
+        line: 275,
+        fn: "handleTurnCommitted(turn)",
+        summary: "启动 scheduler，然后把完整 turn 交给 performAutoCapture。",
+        input: { turn: "{ messages, sessionKey, sessionId, userText }" },
+        output: { next: "performAutoCapture(...)" },
+        reads: ["storeReady", "checkpoint pipeline state"],
+        writes: ["schedulerStartPromise"],
+        failure: "scheduler 没启动会阻断后续 L1/L2/L3 调度。"
+      },
+      {
+        id: "capture",
+        label: "performAutoCapture",
+        kind: "logic",
+        x: 690,
+        y: 360,
+        file: "src/core/hooks/auto-capture.ts",
+        line: 45,
+        fn: "performAutoCapture(params)",
+        summary: "写 L0 原始会话，并通知 pipeline manager。",
+        input: { messages: "[userText, assistantText]", originalUserText: "未注入记忆的原始用户输入" },
+        output: { filteredMessages: "2 条", schedulerNotified: true },
+        reads: ["checkpoint capture cursor", "raw messages"],
+        writes: ["L0 conversations", "L0 vector metadata", "capture cursor"],
+        failure: "L0 为空时查 capture cursor、originalUserMessageCount、消息时间戳。"
+      },
+      {
+        id: "l0",
+        label: "L0 原始会话",
+        kind: "state",
+        x: 930,
+        y: 390,
+        file: "src/core/conversation/l0-recorder.ts",
+        line: 119,
+        fn: "recordConversation(...)",
+        summary: "证据层。保存用户和助手原始消息，是后续 L1 抽取的来源。",
+        input: { role: "user/assistant", content: "原始消息", timestamp: "epoch ms" },
+        output: { rows: "l0_conversations", jsonl: "conversations/" },
+        reads: ["rawMessages"],
+        writes: ["vectors.db:l0_conversations", "l0_fts", "l0_vec", "conversations/"],
+        failure: "如果这里没有数据，后续 L1 必然没有输入。"
+      },
+      {
+        id: "scheduler",
+        label: "Pipeline\nScheduler",
+        kind: "logic",
+        x: 690,
+        y: 520,
+        file: "src/core/hooks/auto-capture.ts",
+        line: 303,
+        fn: "scheduler.notifyConversation",
+        summary: "收到一轮对话完成事件，按阈值、idle timer、L2 min interval 调度 L1/L2/L3。",
+        input: { sessionKey: "openclaw:chat:ltm-demo-001", conversationCount: "+1" },
+        output: { maybeRun: "L1 now or later" },
+        reads: ["pipeline config", "session state"],
+        writes: ["checkpoint pipeline state", "in-memory timers"],
+        failure: "L0 有但 L1 不跑时，优先查这里的 threshold/idle timer。"
+      },
+      {
+        id: "l1Extract",
+        label: "L1 Extractor",
+        kind: "logic",
+        x: 450,
+        y: 530,
+        file: "src/utils/pipeline-factory.ts",
+        line: 353,
+        fn: "extractL1Memories(...)",
+        summary: "LLM 从 L0 对话中抽结构化记忆，写入可检索 L1。",
+        input: { L0: "用户关注长期记忆、中文、不要 offload" },
+        output: { records: ["instruction: 中文", "instruction: 关注长期记忆", "episodic: 拆解项目"] },
+        reads: ["L0 grouped by sessionId"],
+        writes: ["l1_records", "l1_fts", "l1_vec", "records/ fallback"],
+        failure: "查 LLM runner、dedup、maxMemoriesPerSession、embedding 写入失败。"
+      },
+      {
+        id: "l1Store",
+        label: "L1 结构化记忆",
+        kind: "state",
+        x: 230,
+        y: 535,
+        file: "src/core/store/sqlite.ts",
+        line: 561,
+        fn: "l1_records / l1_fts / l1_vec",
+        summary: "长期记忆核心可检索层。L1 不是数据库类型，而是一层结构化记录。",
+        input: { content: "用户希望中文回答", type: "instruction", priority: "..." },
+        output: { searchable: "keyword / embedding / hybrid" },
+        reads: ["L1 recall", "L2 scene extraction", "tdai_memory_search"],
+        writes: ["SQLite tables or TCVDB collection"],
+        failure: "L1 没有记录时，召回通常只能依赖 L2/L3 或为空。"
+      },
+      {
+        id: "l2Extract",
+        label: "L2 Scene\nExtractor",
+        kind: "logic",
+        x: 450,
+        y: 650,
+        file: "src/utils/pipeline-factory.ts",
+        line: 426,
+        fn: "createL2Runner / SceneExtractor.extract",
+        summary: "把新增 L1 records 归并成长期场景块，并维护 scene index。",
+        input: { L1Records: "instruction + episodic" },
+        output: { scene: "tencentdb-agent-memory-study.md" },
+        reads: ["l1_records", "existing scene_blocks", "scene_index"],
+        writes: ["scene_blocks/*.md", ".metadata/scene_index.json"],
+        failure: "查 L2 interval、maxScenes、LLM tool 是否写文件。"
+      },
+      {
+        id: "sceneFiles",
+        label: "scene_blocks/*.md",
+        kind: "state",
+        x: 690,
+        y: 650,
+        file: "src/core/scene/scene-extractor.ts",
+        line: 128,
+        fn: "scene_blocks directory",
+        summary: "L2 场景正文。自动召回不会全文注入，只在 Scene Navigation 里给路径。",
+        input: { sceneBlock: "主题、事实、阶段结论" },
+        output: { readableByAgent: "read_file path" },
+        reads: ["LLM read_file on demand", "syncSceneIndex"],
+        writes: ["SceneExtractor"],
+        failure: "文件存在但导航没有时，检查 syncSceneIndex 是否重建。"
+      },
+      {
+        id: "sceneIndex",
+        label: "scene_index.json",
+        kind: "state",
+        x: 930,
+        y: 625,
+        file: "src/core/scene/scene-index.ts",
+        line: 23,
+        fn: "readSceneIndex(dataDir)",
+        summary: "L2 索引。存 filename、summary、heat、created、updated。Scene Navigation 运行时由它生成。",
+        input: { entries: "由 scene_blocks 扫描生成" },
+        output: { navigationSource: "generateSceneNavigation(entries)" },
+        reads: ["auto-recall", "persona-generator"],
+        writes: ["syncSceneIndex"],
+        failure: "索引条目通常受 persona.maxScenes 间接约束。"
+      },
+      {
+        id: "l3Gen",
+        label: "L3 Persona\nGenerator",
+        kind: "logic",
+        x: 40,
+        y: 560,
+        file: "src/utils/pipeline-factory.ts",
+        line: 583,
+        fn: "createL3Runner / generateLocalPersona",
+        summary: "达到 triggerEveryN 或恢复条件时，用 LLM 生成/更新 persona.md。",
+        input: { triggerEveryN: 50, sceneIndex: "场景摘要", existingPersona: "旧画像" },
+        output: { persona: "中文、链路化、debug 风格偏好" },
+        reads: ["persona.md", "scene_index.json"],
+        writes: ["persona.md", "checkpoint last_persona_at"],
+        failure: "查 PersonaTrigger.shouldGenerate、LLM 是否写 persona.md、正文是否为空。"
+      },
+      {
+        id: "persona",
+        label: "persona.md",
+        kind: "state",
+        x: 40,
+        y: 420,
+        file: "src/core/persona/persona-generator.ts",
+        line: 68,
+        fn: "personaPath",
+        summary: "L3 用户画像。下一轮召回时全文注入，但会 strip 掉 Scene Navigation。",
+        input: { profile: "稳定偏好、长期背景" },
+        output: { appendSystemContext: "<user-persona>...</user-persona>" },
+        reads: ["auto-recall"],
+        writes: ["PersonaGenerator"],
+        failure: "没有 persona.md 不代表 L1 失效，只是 L3 暂时为空。"
+      },
+      {
+        id: "checkpoint",
+        label: "checkpoint\n.metadata",
+        kind: "state",
+        x: 930,
+        y: 505,
+        file: "src/utils/checkpoint.ts",
+        line: 444,
+        fn: "CheckpointManager",
+        summary: "记录 capture cursor、L1 cursor、L2 cursor、persona 触发进度，避免重复处理。",
+        input: { sessionKey: "openclaw:chat:ltm-demo-001" },
+        output: { cursors: "capture/l1/l2/persona progress" },
+        reads: ["auto-capture", "pipeline runners"],
+        writes: ["captureAtomically", "markL1ExtractionComplete", "markPersonaGenerated"],
+        failure: "重复捕获、漏抽取、L2 不跑时都要查 checkpoint。"
+      },
+      {
+        id: "debug",
+        label: "排查树",
+        kind: "failure",
+        x: 40,
+        y: 225,
+        file: "learning-doc/long-term-memory-visual-map.md",
+        line: 1,
+        fn: "Debug decision tree",
+        summary: "长期记忆没生效时，不按文件乱找，按入口、配置、L0、L1、召回、注入顺序排查。",
+        input: { symptom: "下一轮没有记住用户偏好" },
+        output: { firstChecks: ["before_prompt_build 是否触发", "agent_end 是否触发", "L0/L1 是否有数据"] },
+        reads: ["logs", "vectors.db", "persona.md", "scene_index.json"],
+        writes: [],
+        failure: "如果排查没有收敛，重新固定一个真实 userText 走完整链路。"
+      }
+    ];
+
+    const edges = [
+      ["user", "before", "query", "read"],
+      ["before", "coreRecall", "call", "read"],
+      ["coreRecall", "recall", "delegate", "read"],
+      ["recall", "l1Search", "L1", "read"],
+      ["recall", "l2Nav", "L2", "read"],
+      ["recall", "l3PersonaRead", "L3", "read"],
+      ["l1Search", "l1Store", "search", "state"],
+      ["l2Nav", "sceneIndex", "read", "state"],
+      ["l3PersonaRead", "persona", "read", "state"],
+      ["l1Search", "prompt", "prepend", "read"],
+      ["l2Nav", "prompt", "append", "read"],
+      ["l3PersonaRead", "prompt", "append", "read"],
+      ["prompt", "agent", "context", "read"],
+      ["agent", "agentEnd", "finish", "write"],
+      ["user", "agentEnd", "raw", "write"],
+      ["agentEnd", "coreCapture", "turn", "write"],
+      ["coreCapture", "capture", "delegate", "write"],
+      ["capture", "l0", "upsert", "state"],
+      ["capture", "checkpoint", "cursor", "state"],
+      ["capture", "scheduler", "notify", "write"],
+      ["scheduler", "l1Extract", "run L1", "pipeline"],
+      ["l1Extract", "l0", "read", "state"],
+      ["l1Extract", "l1Store", "write", "state"],
+      ["scheduler", "l2Extract", "run L2", "pipeline"],
+      ["l2Extract", "l1Store", "read", "state"],
+      ["l2Extract", "sceneFiles", "write", "state"],
+      ["sceneFiles", "sceneIndex", "sync", "state"],
+      ["scheduler", "l3Gen", "maybe L3", "pipeline"],
+      ["l3Gen", "persona", "write", "state"],
+      ["l3Gen", "sceneIndex", "read", "state"],
+      ["checkpoint", "scheduler", "restore", "state"],
+      ["persona", "l3PersonaRead", "next turn", "read"],
+      ["sceneIndex", "l2Nav", "next turn", "read"],
+      ["l1Store", "l1Search", "next turn", "read"],
+      ["debug", "before", "check", "failure"],
+      ["debug", "agentEnd", "check", "failure"],
+      ["debug", "l0", "check", "failure"],
+      ["debug", "l1Store", "check", "failure"],
+      ["debug", "prompt", "check", "failure"],
+      ["l0", "l1Store", "source", "storage"],
+      ["l1Store", "sceneFiles", "cluster", "storage"],
+      ["sceneIndex", "persona", "profile seed", "storage"],
+      ["checkpoint", "l0", "cursor", "storage"],
+      ["checkpoint", "l1Store", "cursor", "storage"]
+    ].map(([from, to, label, kind]) => ({ from, to, label, kind }));
+
+    const modes = {
+      global: {
+        label: "全局",
+        title: "全局长期记忆蓝图",
+        summary: "读、写、Pipeline、存储和排查节点都在同一张幕布里，用来建立系统全貌。",
+        defaultSelected: "recall",
+        nodes: nodes.map(n => n.id)
+      },
+      read: {
+        label: "读路径",
+        title: "读路径幕布：当前输入如何变成 Prompt 记忆上下文",
+        summary: "从 before_prompt_build 进入 TdaiCore，再到 L1/L2/L3 召回，最后注入主 Agent 的 Prompt。",
+        defaultSelected: "recall",
+        edgeKinds: ["read", "state"],
+        nodes: ["user", "before", "coreRecall", "recall", "l1Search", "l2Nav", "l3PersonaRead", "l1Store", "sceneIndex", "persona", "prompt", "agent"]
+      },
+      write: {
+        label: "写路径",
+        title: "写路径幕布：一轮对话如何落到 L0 并触发调度",
+        summary: "从 agent_end 捕获完整 turn，写入 L0 和 checkpoint，然后通知 scheduler。",
+        defaultSelected: "capture",
+        edgeKinds: ["write", "state"],
+        nodes: ["agent", "agentEnd", "coreCapture", "capture", "l0", "checkpoint", "scheduler"]
+      },
+      pipeline: {
+        label: "Pipeline",
+        title: "Pipeline 幕布：L0 之后如何沉淀为 L1/L2/L3",
+        summary: "scheduler 驱动 L1 抽取、L2 场景归并、L3 persona 生成，checkpoint 记录进度。",
+        defaultSelected: "scheduler",
+        edgeKinds: ["pipeline", "state"],
+        nodes: ["l0", "scheduler", "l1Extract", "l1Store", "l2Extract", "sceneFiles", "sceneIndex", "l3Gen", "persona", "checkpoint"]
+      },
+      storage: {
+        label: "存储",
+        title: "存储幕布：长期记忆各层实际落点",
+        summary: "把 L0、L1、scene_blocks、scene_index、persona 和 checkpoint 摆成数据层视图。",
+        defaultSelected: "l1Store",
+        edgeKinds: ["storage", "state"],
+        nodes: ["l0", "l1Store", "sceneFiles", "sceneIndex", "persona", "checkpoint"]
+      },
+      failure: {
+        label: "排查",
+        title: "排查幕布：长期记忆不生效时从哪里下手",
+        summary: "按入口触发、写入证据、结构化记忆、召回注入和进度状态依次排查。",
+        defaultSelected: "debug",
+        edgeKinds: ["failure"],
+        nodes: ["debug", "before", "agentEnd", "l0", "l1Store", "prompt", "checkpoint"]
+      }
+    };
+
+    const boardLayouts = {
+      global: Object.fromEntries(nodes.map(n => [n.id, { x: n.x, y: n.y }])),
+      read: {
+        user: { x: 40, y: 110 },
+        before: { x: 230, y: 110 },
+        coreRecall: { x: 430, y: 110 },
+        recall: { x: 640, y: 110 },
+        l1Search: { x: 860, y: 30 },
+        l2Nav: { x: 860, y: 150 },
+        l3PersonaRead: { x: 860, y: 270 },
+        l1Store: { x: 970, y: 30 },
+        sceneIndex: { x: 970, y: 150 },
+        persona: { x: 970, y: 270 },
+        prompt: { x: 640, y: 410 },
+        agent: { x: 430, y: 410 }
+      },
+      write: {
+        agent: { x: 50, y: 130 },
+        agentEnd: { x: 250, y: 130 },
+        coreCapture: { x: 460, y: 130 },
+        capture: { x: 670, y: 130 },
+        l0: { x: 900, y: 70 },
+        checkpoint: { x: 900, y: 190 },
+        scheduler: { x: 670, y: 350 }
+      },
+      pipeline: {
+        l0: { x: 70, y: 90 },
+        scheduler: { x: 70, y: 280 },
+        checkpoint: { x: 70, y: 470 },
+        l1Extract: { x: 310, y: 90 },
+        l1Store: { x: 540, y: 90 },
+        l2Extract: { x: 310, y: 280 },
+        sceneFiles: { x: 540, y: 280 },
+        sceneIndex: { x: 770, y: 280 },
+        l3Gen: { x: 310, y: 470 },
+        persona: { x: 540, y: 470 }
+      },
+      storage: {
+        l0: { x: 80, y: 150 },
+        l1Store: { x: 330, y: 150 },
+        sceneFiles: { x: 580, y: 150 },
+        sceneIndex: { x: 830, y: 150 },
+        checkpoint: { x: 330, y: 390 },
+        persona: { x: 580, y: 390 }
+      },
+      failure: {
+        debug: { x: 70, y: 270 },
+        before: { x: 330, y: 80 },
+        agentEnd: { x: 330, y: 230 },
+        l0: { x: 330, y: 380 },
+        prompt: { x: 610, y: 80 },
+        checkpoint: { x: 610, y: 230 },
+        l1Store: { x: 610, y: 380 }
+      }
+    };
+
+    const boardPans = Object.fromEntries(Object.keys(modes).map(id => [id, { x: 0, y: 0 }]));
+    function cloneLayout(layout) {
+      return Object.fromEntries(Object.entries(layout).map(([id, pos]) => [id, { x: pos.x, y: pos.y }]));
+    }
+    const initialBoardLayouts = Object.fromEntries(Object.entries(boardLayouts).map(([id, layout]) => [id, cloneLayout(layout)]));
+
+    const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
+    let selectedId = "recall";
+    let mode = "global";
+    let tab = "overview";
+    let floatingTab = "overview";
+    let floatingVisible = false;
+    let dragState = null;
+    let panState = null;
+    let floatingDragState = null;
+    let sidebarCollapsed = false;
+    let theme = "light";
+    let floatingPosition = { left: 0, top: 0, manual: false, nodeId: null, mode: null };
+
+    const svg = document.getElementById("networkSvg");
+    const graphWrap = document.querySelector(".graph-wrap");
+    const layout = document.getElementById("layout");
+    const boardTitle = document.getElementById("boardTitle");
+    const boardSummary = document.getElementById("boardSummary");
+    const detail = document.getElementById("detail");
+    const neighborsPanel = document.getElementById("neighbors");
+    const modebar = document.getElementById("modebar");
+    const themeToggle = document.getElementById("themeToggle");
+    const fitBtn = document.getElementById("fitBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const side = document.getElementById("side");
+    const sideToggle = document.getElementById("sideToggle");
+    const sideToggleLabel = document.getElementById("sideToggleLabel");
+    const floatingInspector = document.getElementById("floatingInspector");
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function json(value) {
+      return escapeHtml(JSON.stringify(value, null, 2));
+    }
+
+    function initialTheme() {
+      const saved = localStorage.getItem("ltm-blueprint-theme");
+      if (saved === "dark" || saved === "light") return saved;
+      return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+
+    function applyTheme(nextTheme) {
+      theme = nextTheme;
+      document.body.classList.toggle("theme-dark", theme === "dark");
+      themeToggle.textContent = theme === "dark" ? "浅色模式" : "深色模式";
+      themeToggle.setAttribute("aria-pressed", String(theme === "dark"));
+      localStorage.setItem("ltm-blueprint-theme", theme);
+    }
+
+    function selectedSet() {
+      return new Set(modes[mode].nodes);
+    }
+
+    function currentPan() {
+      return boardPans[mode];
+    }
+
+    function visibleEdges() {
+      const visible = selectedSet();
+      const edgeKinds = modes[mode].edgeKinds;
+      return edges
+        .map((edge, index) => ({ ...edge, index }))
+        .filter(edge => visible.has(edge.from) && visible.has(edge.to))
+        .filter(edge => mode === "global" || edgeKinds.includes(edge.kind));
+    }
+
+    function applyBoardLayout() {
+      const layoutForMode = boardLayouts[mode];
+      for (const id of modes[mode].nodes) {
+        const pos = layoutForMode[id];
+        if (!pos || !byId[id]) continue;
+        byId[id].x = pos.x;
+        byId[id].y = pos.y;
+      }
+    }
+
+    function persistNodePosition(id) {
+      if (!boardLayouts[mode][id] || !byId[id]) return;
+      boardLayouts[mode][id] = { x: byId[id].x, y: byId[id].y };
+    }
+
+    function adjacentIds(id) {
+      const set = new Set();
+      for (const e of visibleEdges()) {
+        if (e.from === id) set.add(e.to);
+        if (e.to === id) set.add(e.from);
+      }
+      return set;
+    }
+
+    function isEdgeHighlighted(e) {
+      return mode === "global" || e.from === selectedId || e.to === selectedId;
+    }
+
+    function edgePath(from, to) {
+      const a = byId[from];
+      const b = byId[to];
+      const x1 = a.x + 174;
+      const y1 = a.y + 44;
+      const x2 = b.x - 10;
+      const y2 = b.y + 44;
+      const dx = Math.abs(x2 - x1);
+      const dy = Math.abs(y2 - y1);
+      const curve = Math.max(40, Math.min(120, (dx + dy) / 3));
+      return `M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}`;
+    }
+
+    function wrapLabel(label) {
+      return label.split("\n");
+    }
+
+    function renderModes() {
+      modebar.innerHTML = Object.entries(modes).map(([id, item]) => `
+        <button type="button" class="${mode === id ? "active" : ""}" data-mode="${id}">${item.label}</button>
+      `).join("");
+      modebar.querySelectorAll("button").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const nextMode = btn.dataset.mode;
+          if (nextMode !== mode) {
+            mode = nextMode;
+            if (!modes[mode].nodes.includes(selectedId)) {
+              selectedId = modes[mode].defaultSelected;
+            }
+            tab = "overview";
+            floatingTab = "overview";
+            floatingVisible = false;
+            floatingPosition.manual = false;
+          }
+          render();
+        });
+      });
+    }
+
+    function renderBoardHeader() {
+      boardTitle.textContent = modes[mode].title;
+      boardSummary.textContent = modes[mode].summary;
+    }
+
+    function svgPointFromEvent(event) {
+      const pt = svg.createSVGPoint();
+      pt.x = event.clientX;
+      pt.y = event.clientY;
+      return pt.matrixTransform(svg.getScreenCTM().inverse());
+    }
+
+    function boardPointFromEvent(event) {
+      const p = svgPointFromEvent(event);
+      const pan = currentPan();
+      return { x: p.x - pan.x, y: p.y - pan.y };
+    }
+
+    function setSelected(id, showFloating = true) {
+      selectedId = id;
+      tab = "overview";
+      floatingTab = "overview";
+      floatingVisible = showFloating;
+      floatingPosition.manual = false;
+      render();
+    }
+
+    function renderGraph() {
+      applyBoardLayout();
+      const activeNeighbors = adjacentIds(selectedId);
+      const pathNodes = selectedSet();
+      const boardEdges = visibleEdges();
+      const pan = currentPan();
+
+      svg.innerHTML = `
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#8fa0b5"></polygon>
+          </marker>
+          <marker id="arrow-active" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#1d63d8"></polygon>
+          </marker>
+        </defs>
+        <rect class="board-hit-area" x="-1200" y="-1200" width="3600" height="3000" fill="transparent"></rect>
+        <g class="viewport" transform="translate(${pan.x}, ${pan.y})">
+          <g class="edges">
+          ${boardEdges.map((e) => {
+            const related = e.from === selectedId || e.to === selectedId;
+            const inPath = isEdgeHighlighted(e);
+            const cls = ["edge", inPath ? "path" : "", related ? "related" : ""].join(" ");
+            const a = byId[e.from];
+            const b = byId[e.to];
+            const labelX = (a.x + b.x) / 2 + 82;
+            const labelY = (a.y + b.y) / 2 + 28;
+            return `
+              <path class="${cls}" data-edge-index="${e.index}" d="${edgePath(e.from, e.to)}" ${inPath ? "marker-end=\"url(#arrow-active)\"" : ""}></path>
+              ${inPath || related ? `<text class="edge-label" data-edge-label-index="${e.index}" x="${labelX}" y="${labelY}">${escapeHtml(e.label)}</text>` : ""}
+            `;
+          }).join("")}
+          </g>
+          <g class="nodes">
+          ${nodes.filter(n => pathNodes.has(n.id)).map(n => {
+            const isActive = n.id === selectedId;
+            const isRelated = activeNeighbors.has(n.id);
+            const labelLines = wrapLabel(n.label);
+            return `
+              <g class="node ${n.kind} ${isActive ? "active" : ""} ${isRelated ? "related" : ""}" data-node="${n.id}" tabindex="0" role="button" aria-label="${escapeHtml(n.label)}" transform="translate(${n.x}, ${n.y})">
+                <rect class="node-body" width="164" height="76"></rect>
+                <rect class="node-head" width="164" height="24"></rect>
+                <circle class="pin in" cx="-10" cy="44" r="6"></circle>
+                <circle class="pin out" cx="174" cy="44" r="6"></circle>
+                <text class="node-kind" x="12" y="16">${escapeHtml(n.kind)}</text>
+                ${labelLines.map((line, i) => `<text x="12" y="${43 + i * 14}" font-weight="${i === 0 ? 700 : 600}">${escapeHtml(line)}</text>`).join("")}
+                <text class="port-label" x="-20" y="64" text-anchor="middle">in</text>
+                <text class="port-label" x="174" y="64" text-anchor="middle">out</text>
+              </g>
+            `;
+          }).join("")}
+          </g>
+        </g>
+      `;
+
+      svg.querySelectorAll(".node").forEach(el => {
+        el.addEventListener("pointerdown", event => {
+          event.stopPropagation();
+          const node = byId[el.dataset.node];
+          const p = boardPointFromEvent(event);
+          dragState = {
+            id: node.id,
+            wasSelected: selectedId === node.id,
+            wasFloatingVisible: floatingVisible,
+            startX: p.x,
+            startY: p.y,
+            nodeX: node.x,
+            nodeY: node.y,
+            moved: false
+          };
+          el.setPointerCapture(event.pointerId);
+          graphWrap.classList.add("dragging");
+          el.classList.add("dragging");
+        });
+        el.addEventListener("pointermove", event => {
+          if (!dragState || dragState.id !== el.dataset.node) return;
+          event.stopPropagation();
+          const p = boardPointFromEvent(event);
+          const dx = p.x - dragState.startX;
+          const dy = p.y - dragState.startY;
+          if (Math.abs(dx) + Math.abs(dy) > 8) dragState.moved = true;
+          const node = byId[dragState.id];
+          node.x = Math.max(-260, Math.min(1300, dragState.nodeX + dx));
+          node.y = Math.max(-260, Math.min(980, dragState.nodeY + dy));
+          persistNodePosition(node.id);
+          updateGraphPositions();
+          renderFloatingInspector();
+        });
+        el.addEventListener("pointerup", event => {
+          event.stopPropagation();
+          const wasDrag = dragState?.moved;
+          const wasSelected = dragState?.wasSelected;
+          const wasFloatingVisible = dragState?.wasFloatingVisible;
+          const id = el.dataset.node;
+          dragState = null;
+          graphWrap.classList.remove("dragging");
+          try { el.releasePointerCapture(event.pointerId); } catch {}
+          if (wasDrag) {
+            selectedId = id;
+            tab = "overview";
+            floatingTab = "overview";
+            floatingVisible = wasSelected && wasFloatingVisible;
+            floatingPosition.manual = false;
+            render();
+            return;
+          }
+          if (wasSelected) {
+            setSelected(id, true);
+            return;
+          }
+          selectedId = id;
+          tab = "overview";
+          floatingTab = "overview";
+          floatingVisible = false;
+          floatingPosition.manual = false;
+          render();
+        });
+        el.addEventListener("pointercancel", () => {
+          dragState = null;
+          graphWrap.classList.remove("dragging");
+          render();
+        });
+        el.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setSelected(el.dataset.node, true);
+          }
+        });
+      });
+    }
+
+    function updateGraphPositions() {
+      const pan = currentPan();
+      const viewport = svg.querySelector(".viewport");
+      if (viewport) viewport.setAttribute("transform", `translate(${pan.x}, ${pan.y})`);
+
+      for (const node of nodes) {
+        const el = svg.querySelector(`.node[data-node="${node.id}"]`);
+        if (el) el.setAttribute("transform", `translate(${node.x}, ${node.y})`);
+      }
+
+      svg.querySelectorAll("[data-edge-index]").forEach(path => {
+        const edge = edges[Number(path.dataset.edgeIndex)];
+        if (edge) path.setAttribute("d", edgePath(edge.from, edge.to));
+      });
+
+      svg.querySelectorAll("[data-edge-label-index]").forEach(label => {
+        const edge = edges[Number(label.dataset.edgeLabelIndex)];
+        if (!edge) return;
+        const a = byId[edge.from];
+        const b = byId[edge.to];
+        label.setAttribute("x", String((a.x + b.x) / 2 + 82));
+        label.setAttribute("y", String((a.y + b.y) / 2 + 28));
+      });
+    }
+
+    function clampFloatingPosition(left, top) {
+      const width = floatingInspector.offsetWidth || 340;
+      const height = floatingInspector.offsetHeight || 360;
+      return {
+        left: Math.max(12, Math.min(left, graphWrap.clientWidth - width - 12)),
+        top: Math.max(12, Math.min(top, graphWrap.clientHeight - height - 12))
+      };
+    }
+
+    function defaultFloatingPosition(node) {
+      const svgRect = svg.getBoundingClientRect();
+      const scaleX = svgRect.width / 1180;
+      const scaleY = svgRect.height / 820;
+      const pan = currentPan();
+      const nodeScreenX = (node.x + pan.x + 184) * scaleX;
+      const nodeScreenY = (node.y + pan.y + 8) * scaleY;
+      let left = nodeScreenX + 14;
+      let top = nodeScreenY;
+
+      const width = floatingInspector.offsetWidth || 340;
+      if (left > graphWrap.clientWidth - width - 16) {
+        left = (node.x + pan.x - width - 18) * scaleX;
+      }
+      return clampFloatingPosition(left, top);
+    }
+
+    function placeFloatingInspector(node) {
+      if (
+        !floatingPosition.manual ||
+        floatingPosition.nodeId !== node.id ||
+        floatingPosition.mode !== mode
+      ) {
+        const next = defaultFloatingPosition(node);
+        floatingPosition = {
+          left: next.left,
+          top: next.top,
+          manual: false,
+          nodeId: node.id,
+          mode
+        };
+      } else {
+        const next = clampFloatingPosition(floatingPosition.left, floatingPosition.top);
+        floatingPosition.left = next.left;
+        floatingPosition.top = next.top;
+      }
+
+      floatingInspector.style.left = `${floatingPosition.left}px`;
+      floatingInspector.style.top = `${floatingPosition.top}px`;
+    }
+
+    function setFloatingPosition(left, top, manual = true) {
+      const next = clampFloatingPosition(left, top);
+      floatingPosition = {
+        left: next.left,
+        top: next.top,
+        manual,
+        nodeId: selectedId,
+        mode
+      };
+      floatingInspector.style.left = `${next.left}px`;
+      floatingInspector.style.top = `${next.top}px`;
+    }
+
+    function floatingContent(node) {
+      if (floatingTab === "overview") {
+        return `
+          <div class="floating-callout">${escapeHtml(node.summary)}</div>
+          <div class="meta">
+            <div class="meta-row"><strong>断点</strong><span><code>${escapeHtml(node.file)}:${node.line}</code></span></div>
+            <div class="meta-row"><strong>函数</strong><span><code>${escapeHtml(node.fn)}</code></span></div>
+          </div>
+        `;
+      }
+      if (floatingTab === "data") {
+        return `
+          <div class="packet-card">
+            <h3>Input packet</h3>
+            <pre><code>${json(node.input)}</code></pre>
+          </div>
+          <div class="packet-card">
+            <h3>Output packet</h3>
+            <pre><code>${json(node.output)}</code></pre>
+          </div>
+        `;
+      }
+      if (floatingTab === "state") {
+        return `
+          <div class="packet-card">
+            <h3>Reads</h3>
+            <div class="state-list">
+              ${node.reads.map(item => `<div class="state-chip read">${escapeHtml(item)}</div>`).join("") || `<div class="state-chip read">无读取</div>`}
+            </div>
+          </div>
+          <div class="packet-card">
+            <h3>Writes</h3>
+            <div class="state-list">
+              ${(node.writes.length ? node.writes : ["无持久化写入"]).map(item => `<div class="state-chip write">${escapeHtml(item)}</div>`).join("")}
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div class="packet-card">
+          <h3>Failure branch</h3>
+          <pre><code>${escapeHtml(node.failure)}</code></pre>
+        </div>
+      `;
+    }
+
+    function renderFloatingInspector() {
+      if (!floatingVisible) {
+        floatingInspector.classList.add("hidden");
+        return;
+      }
+      const node = byId[selectedId];
+      if (!node) {
+        floatingInspector.classList.add("hidden");
+        return;
+      }
+      const tabs = [
+        ["overview", "概览"],
+        ["data", "数据"],
+        ["state", "状态"],
+        ["failure", "故障"]
+      ];
+      floatingInspector.classList.remove("hidden");
+      floatingInspector.innerHTML = `
+        <div class="floating-head">
+          <div>
+            <strong>${escapeHtml(node.label.replaceAll("\n", " "))}</strong>
+            <span>${escapeHtml(node.file)}:${node.line}</span>
+          </div>
+          <button type="button" class="floating-close" aria-label="关闭">x</button>
+        </div>
+        <div class="floating-tabs">
+          ${tabs.map(([id, label]) => `<button type="button" class="floating-tab ${floatingTab === id ? "active" : ""}" data-ftab="${id}">${label}</button>`).join("")}
+        </div>
+        <div class="floating-body">${floatingContent(node)}</div>
+      `;
+
+      placeFloatingInspector(node);
+
+      floatingInspector.querySelector(".floating-close").addEventListener("click", () => {
+        floatingVisible = false;
+        renderFloatingInspector();
+      });
+      floatingInspector.querySelectorAll(".floating-tab").forEach(btn => {
+        btn.addEventListener("click", () => {
+          floatingTab = btn.dataset.ftab;
+          renderFloatingInspector();
+        });
+      });
+
+      const floatingHead = floatingInspector.querySelector(".floating-head");
+      floatingHead.addEventListener("pointerdown", event => {
+        if (event.target.closest(".floating-close")) return;
+        event.stopPropagation();
+        floatingDragState = {
+          startX: event.clientX,
+          startY: event.clientY,
+          left: floatingPosition.left,
+          top: floatingPosition.top
+        };
+        floatingInspector.classList.add("dragging");
+        floatingHead.setPointerCapture(event.pointerId);
+      });
+      floatingHead.addEventListener("pointermove", event => {
+        if (!floatingDragState) return;
+        event.stopPropagation();
+        setFloatingPosition(
+          floatingDragState.left + event.clientX - floatingDragState.startX,
+          floatingDragState.top + event.clientY - floatingDragState.startY,
+          true
+        );
+      });
+      floatingHead.addEventListener("pointerup", event => {
+        if (!floatingDragState) return;
+        event.stopPropagation();
+        floatingDragState = null;
+        floatingInspector.classList.remove("dragging");
+        try { floatingHead.releasePointerCapture(event.pointerId); } catch {}
+      });
+      floatingHead.addEventListener("pointercancel", () => {
+        floatingDragState = null;
+        floatingInspector.classList.remove("dragging");
+      });
+    }
+
+    function renderTabContent(node) {
+      if (tab === "overview") {
+        return `
+          <div class="inspector-kicker">Module inspector</div>
+          <div class="meta">
+            <div class="meta-row"><strong>职责</strong><span>${escapeHtml(node.summary)}</span></div>
+            <div class="meta-row"><strong>断点</strong><span><code>${escapeHtml(node.file)}:${node.line}</code></span></div>
+            <div class="meta-row"><strong>函数</strong><span><code>${escapeHtml(node.fn)}</code></span></div>
+          </div>
+        `;
+      }
+      if (tab === "data") {
+        return `
+          <div class="packet">
+            <div class="packet-card">
+              <h3>Input packet</h3>
+              <pre><code>${json(node.input)}</code></pre>
+            </div>
+            <div class="packet-card">
+              <h3>Output packet</h3>
+              <pre><code>${json(node.output)}</code></pre>
+            </div>
+          </div>
+        `;
+      }
+      if (tab === "state") {
+        return `
+          <div class="packet">
+            <div class="packet-card">
+              <h3>Reads</h3>
+              <div class="state-list">
+                ${node.reads.map(item => `<div class="state-chip read">${escapeHtml(item)}</div>`).join("") || `<div class="state-chip read">无读取</div>`}
+              </div>
+            </div>
+            <div class="packet-card">
+              <h3>Writes</h3>
+              <div class="state-list">
+                ${(node.writes.length ? node.writes : ["无持久化写入"]).map(item => `<div class="state-chip write">${escapeHtml(item)}</div>`).join("")}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div class="packet-card">
+          <h3>Failure branch</h3>
+          <pre><code>${escapeHtml(node.failure)}</code></pre>
+        </div>
+      `;
+    }
+
+    function renderDetail() {
+      const node = byId[selectedId];
+      const tabs = [
+        ["overview", "概览"],
+        ["data", "数据"],
+        ["state", "状态"],
+        ["failure", "失败分支"]
+      ];
+      detail.innerHTML = `
+        <div class="inspector-kicker">Selected blueprint node</div>
+        <h2>${escapeHtml(node.label.replaceAll("\n", " "))}</h2>
+        <p class="summary">${escapeHtml(node.kind)} module</p>
+        <div class="meta">
+          <div class="meta-row"><strong>文件</strong><span><a href="../${escapeHtml(node.file)}">${escapeHtml(node.file)}:${node.line}</a></span></div>
+          <div class="meta-row"><strong>阶段</strong><span>${escapeHtml(mode === "global" ? "全局视图" : modes[mode].label)}</span></div>
+        </div>
+        <div class="tabs">
+          ${tabs.map(([id, label]) => `<button type="button" class="tab ${tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}
+        </div>
+        ${renderTabContent(node)}
+      `;
+      detail.querySelectorAll(".tab").forEach(btn => {
+        btn.addEventListener("click", () => {
+          tab = btn.dataset.tab;
+          renderDetail();
+        });
+      });
+    }
+
+    function renderNeighbors() {
+      const related = [...adjacentIds(selectedId)].map(id => byId[id]);
+      const currentEdges = visibleEdges();
+      const incoming = currentEdges.filter(e => e.to === selectedId);
+      const outgoing = currentEdges.filter(e => e.from === selectedId);
+
+      neighborsPanel.innerHTML = `
+        <h2>上下游节点</h2>
+        <div class="meta">
+          <div class="meta-row"><strong>上游</strong><span>${incoming.map(e => byId[e.from].label.replaceAll("\n", " ")).join(" / ") || "无"}</span></div>
+          <div class="meta-row"><strong>下游</strong><span>${outgoing.map(e => byId[e.to].label.replaceAll("\n", " ")).join(" / ") || "无"}</span></div>
+        </div>
+        <div class="neighbor-list">
+          ${related.map(n => `
+            <div class="neighbor" data-node="${n.id}">
+              <strong>${escapeHtml(n.label.replaceAll("\n", " "))}</strong><br />
+              <span>${escapeHtml(n.summary.slice(0, 58))}${n.summary.length > 58 ? "..." : ""}</span>
+            </div>
+          `).join("")}
+        </div>
+      `;
+
+      neighborsPanel.querySelectorAll(".neighbor").forEach(el => {
+        el.addEventListener("click", () => {
+          setSelected(el.dataset.node, true);
+        });
+      });
+    }
+
+    function render() {
+      renderBoardHeader();
+      renderModes();
+      renderGraph();
+      renderDetail();
+      renderNeighbors();
+      renderFloatingInspector();
+    }
+
+    function resetCurrentBoard() {
+      boardPans[mode] = { x: 0, y: 0 };
+      boardLayouts[mode] = cloneLayout(initialBoardLayouts[mode]);
+      floatingPosition.manual = false;
+      applyBoardLayout();
+      updateGraphPositions();
+      renderFloatingInspector();
+    }
+
+    function renderSidebar() {
+      layout.classList.toggle("sidebar-collapsed", sidebarCollapsed);
+      side.classList.toggle("collapsed", sidebarCollapsed);
+      sideToggle.setAttribute("aria-expanded", String(!sidebarCollapsed));
+      sideToggleLabel.textContent = sidebarCollapsed ? "展开侧栏" : "收起侧栏";
+    }
+
+    svg.addEventListener("pointerdown", event => {
+      if (event.target.closest(".node")) return;
+      const p = svgPointFromEvent(event);
+      const pan = currentPan();
+      panState = {
+        startX: p.x,
+        startY: p.y,
+        panX: pan.x,
+        panY: pan.y,
+        pointerId: event.pointerId
+      };
+      svg.setPointerCapture(event.pointerId);
+      graphWrap.classList.add("panning");
+    });
+
+    svg.addEventListener("pointermove", event => {
+      if (!panState) return;
+      const p = svgPointFromEvent(event);
+      const pan = currentPan();
+      pan.x = Math.max(-520, Math.min(520, panState.panX + p.x - panState.startX));
+      pan.y = Math.max(-420, Math.min(420, panState.panY + p.y - panState.startY));
+      updateGraphPositions();
+      renderFloatingInspector();
+    });
+
+    svg.addEventListener("pointerup", event => {
+      if (!panState) return;
+      panState = null;
+      graphWrap.classList.remove("panning");
+      try { svg.releasePointerCapture(event.pointerId); } catch {}
+    });
+
+    svg.addEventListener("pointercancel", event => {
+      panState = null;
+      graphWrap.classList.remove("panning");
+      try { svg.releasePointerCapture(event.pointerId); } catch {}
+    });
+
+    fitBtn.addEventListener("click", () => {
+      resetCurrentBoard();
+    });
+
+    resetBtn.addEventListener("click", () => {
+      mode = "global";
+      selectedId = "recall";
+      tab = "overview";
+      floatingTab = "overview";
+      floatingVisible = false;
+      floatingPosition.manual = false;
+      render();
+    });
+
+    sideToggle.addEventListener("click", () => {
+      sidebarCollapsed = !sidebarCollapsed;
+      renderSidebar();
+      renderFloatingInspector();
+    });
+
+    themeToggle.addEventListener("click", () => {
+      applyTheme(theme === "dark" ? "light" : "dark");
+      renderFloatingInspector();
+    });
+
+    applyTheme(initialTheme());
+    renderSidebar();
+    render();
+  </script>
+</body>
+</html>

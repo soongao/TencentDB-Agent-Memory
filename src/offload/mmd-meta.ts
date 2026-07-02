@@ -1,6 +1,8 @@
 /**
  * MMD metadata parsing utility.
  * Extracted from prompts/l15.ts — pure data parsing, not a prompt.
+ * 中文：MMD元数据解析工具。
+ * 从prompts/l15.ts提取——仅纯数据解析，非提示
  */
 
 export interface MmdMeta {
@@ -40,6 +42,7 @@ export function parseMmdMeta(
       meta.updatedTime = (p.updatedTime as string) || null;
     } catch {
       /* ignore */
+      /** 中文：ignore */
     }
   }
   meta.doneCount = (content.match(/status:\s*done/gi) || []).length;

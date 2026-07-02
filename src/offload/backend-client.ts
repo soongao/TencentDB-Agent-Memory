@@ -7,6 +7,9 @@
  * collection and file I/O.
  *
  * All methods throw on failure — callers are responsible for fallback.
+ * 中文：上下文卸载的后端HTTP客户端。
+ * 当配置了`backendUrl`时，L1/L1.5/L2/L4语言模型调用将通过此客户端路由到后端服务。后端处理提示构建+语言模型调用；客户端负责数据收集和文件I/O。
+ * 所有方法在失败时抛出异常——调用者需负责回退.
  */
 import type { OffloadEntry, ToolPair, TaskJudgment, PluginLogger } from "./types.js";
 import { traceOffloadModelIo } from "./opik-tracer.js";
@@ -14,6 +17,7 @@ import * as https from "node:https";
 import * as http from "node:http";
 
 // ─── Request / Response Types ────────────────────────────────────────────────
+// 中文：─── 请求/响应类型 ────────────────────────────────────────────────
 
 export interface L1Request {
   recentMessages: string;
@@ -94,6 +98,7 @@ export interface L4Response {
 /**
  * Arbitrary key/value payload uploaded to the backend `/offload/v1/store` endpoint.
  * The backend stores the raw JSON body verbatim; see `internal/handler/store.go`.
+ * 中文：上传至后端`/offload/v1/store`端点的任意键值对负载。后端原封不动地存储JSON主体内容；参见`internal/handler/store.go`。
  */
 export type StoreStatePayload = Record<string, unknown>;
 
@@ -102,17 +107,21 @@ export interface StoreStateResponse {
 }
 
 // ─── BackendClient ───────────────────────────────────────────────────────────
+// 中文：─── BackendClient ───────────────────────────────────────────────────────────
 
 export class BackendClient {
   private baseUrl: string;
   private apiKey: string | undefined;
   /** Hardcoded timeout for all backend calls (L1/L1.5/L2/L4) */
+  /** 中文：所有后端调用（L1/L1.5/L2/L4）的硬编码超时时间 */
   private static readonly TIMEOUT_MS = 120_000;
   private logger: PluginLogger;
   private sessionKeyFn: () => string | null;
   /** Resolves the value of the `X-User-Id` header sent on every call. */
+  /** 中文：每次调用中解决发送的`X-User-Id`头的值. */
   private userIdFn: () => string | null;
   /** Resolves the value of the `X-Task-Id` header sent on every call (optional). */
+  /** 中文：每次调用中解决发送的可选`X-Task-Id`头的值。 */
   private taskIdFn: () => string | null;
 
   constructor(
@@ -120,6 +129,7 @@ export class BackendClient {
     logger: PluginLogger,
     apiKey?: string,
     _defaultTimeoutMs?: number, // kept for backward compat, ignored
+    // 中文：保留用于向后兼容，忽略
     sessionKeyFn?: () => string | null,
     userIdFn?: () => string | null,
     taskIdFn?: () => string | null,
@@ -133,6 +143,7 @@ export class BackendClient {
   }
 
   /** L1 Summarize — synchronous await (used by assemble flush + force trigger) */
+  /** 中文：L1摘要 — 同步等待（用于构建flush+强制触发） */
   async l1Summarize(req: L1Request): Promise<L1Response> {
     const pairNames = req.toolPairs.map((p) => `${p.toolName}(${p.toolCallId})`).join(", ");
     this.logger.debug?.(`[context-offload] L1 >>> summarize ${req.toolPairs.length} pairs: [${pairNames}]`);
@@ -160,6 +171,7 @@ export class BackendClient {
   }
 
   /** L1.5 Task Judgment — synchronous await, uses unified timeout */
+  /** 中文：L1.5 任务判断 — 同步 await，使用统一超时 */
   async l15Judge(req: L15Request): Promise<L15Response> {
     this.logger.debug?.(
       `[context-offload] L1.5 >>> judge: currentMmd=${req.currentMmd?.filename ?? "null"}, availableMmds=${req.availableMmdMetas.length}, recentMessages=${req.recentMessages.length} chars`,
@@ -187,6 +199,7 @@ export class BackendClient {
   }
 
   /** L2 MMD Generation — async background, uses unified timeout */
+  /** 中文：L2 MMD生成 — 异步后台处理，使用统一超时 */
   async l2Generate(req: L2Request): Promise<L2Response> {
     const entryIds = req.newEntries.map((e) => e.tool_call_id).join(", ");
     this.logger.debug?.(
@@ -217,6 +230,7 @@ export class BackendClient {
   }
 
   /** L4 Skill Generation — synchronous await, uses unified timeout */
+  /** 中文：L4 技能生成 — 同步 await，使用统一超时 */
   async l4Generate(req: L4Request): Promise<L4Response> {
     this.logger.debug?.(
       `[context-offload] L4 >>> generate: mmd=${req.mmdFilename}, entries=${req.offloadEntries.length}, skillFocus=${req.skillFocus ?? "null"}`,
@@ -247,9 +261,13 @@ export class BackendClient {
    * Upload an arbitrary state payload to the backend `/offload/v1/store` endpoint.
    * Fire-and-forget style — the caller is expected to `.catch(...)` rejections.
    * Uses a short timeout so reporting never blocks hook execution meaningfully.
+   * 中文：上传任意状态负载到后端 `/offload/v1/store` 端点。
+   * fire-and-forget 风格 — 调用者需 `.catch(...)` 处理拒绝情况。
+   * 使用短超时以确保上报不会阻塞插件钩子执行
    */
   async storeState(payload: StoreStatePayload): Promise<StoreStateResponse> {
     // Short timeout — reporting must never stall the plugin
+    // 中文：短超时 — 上报必须从不阻塞插件
     const timeoutMs = 10_000;
     const startMs = Date.now();
     try {
@@ -267,6 +285,7 @@ export class BackendClient {
   }
 
   // ─── Internal ──────────────────────────────────────────────────────────
+  // 中文：─── 内部 ──────────────────────────────────────────────────────────
 
   private async post<T>(path: string, body: unknown, timeoutMs: number): Promise<T> {
     const url = `${this.baseUrl}${path}`;
@@ -284,14 +303,18 @@ export class BackendClient {
     }
     // Propagate identity headers so the backend can key stored state by
     // `X-User-Id` (used as Mongo `_id` in /store) and scope by task.
+    // 中文：传播身份标头以便后端可以根据
+    // `X-User-Id`（在 /store 中用作 Mongo `_id`）和任务范围来键入存储状态
     try {
       const uid = this.userIdFn();
       if (uid) reqHeaders["X-User-Id"] = uid;
     } catch { /* ignore — identity headers are best-effort */ }
+    // 中文：忽略 - 身份标头尽力而为
     try {
       const tid = this.taskIdFn();
       if (tid) reqHeaders["X-Task-Id"] = tid;
     } catch { /* ignore */ }
+    // 中文：ignore
 
     const parsed = new URL(url);
     const isHttps = parsed.protocol === "https:";

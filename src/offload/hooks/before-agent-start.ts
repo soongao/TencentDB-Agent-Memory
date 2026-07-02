@@ -4,6 +4,10 @@
  *
  * Backend-only mode: local LLM judge has been removed.
  * Only normalizeJudgment and handleTaskTransition are exported for use by index.ts.
+ * 中文：before_agent_start hook handler.
+ * 实现L1.5：任务完成判断和主动MMD管理。
+ * 后端-only模式：本地LLM判断已被移除。
+ * normalizeJudgment和handleTaskTransition仅导出供index.ts使用。
  */
 import { readMmd, writeMmd, deleteMmd, type StorageContext } from "../storage.js";
 import type { OffloadStateManager } from "../state-manager.js";
@@ -13,9 +17,13 @@ import type { PluginLogger, TaskJudgment } from "../types.js";
  * Normalize a raw L1.5 judgment response (from backend)
  * into a safe TaskJudgment with guaranteed boolean fields.
  * Handles null/undefined values from backend fallback responses.
+ * 中文：将原始的L1.5判断响应（来自后端）
+ * 标准化为带有保证布尔字段的安全任务判断。
+ * 处理后端回退响应中的null/undefined值。
  */
 export function normalizeJudgment(raw: Record<string, unknown>): TaskJudgment | null {
   // All-null response from backend means "LLM unavailable" — treat as no judgment
+  // 中文：后端全为空响应意味着"LLM不可用"——视为无判断
   if (raw.taskCompleted == null && raw.isContinuation == null && raw.isLongTask == null) {
     return null;
   }
@@ -61,6 +69,7 @@ export async function handleTaskTransition(
         await deleteMmd(ctx, oldFilename);
       } catch {
         /* ignore */
+        /** 中文：ignore */
       }
     }
   };

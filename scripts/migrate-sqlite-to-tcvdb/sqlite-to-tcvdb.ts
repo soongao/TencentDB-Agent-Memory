@@ -224,6 +224,7 @@ function parseTimeout(rawValue: string | undefined): number {
 /**
  * Build a "nothing to migrate" summary — used when source data dir or sqlite
  * file doesn't exist (e.g. fresh deployment that hasn't captured any data yet).
+ * 中文：构建一个“无数据迁移”摘要——用于源数据目录或sqlite文件不存在的情况（例如尚未捕获任何数据的新部署）.
  */
 function buildEmptySummary(options: ResolvedMigrationCliOptions): MigrationPreflightSummary {
   return {
@@ -370,6 +371,7 @@ async function migrateL1Records(sourceStore: VectorStore, targetStore: Migration
   const useBatch = typeof targetStore.upsertL1Batch === "function";
 
   // eslint-disable-next-line no-constant-condition
+  // 中文：eslint-disable-next-line no-constant-condition
   while (true) {
     const rows = sourceStore.queryL1RecordsCursor(cursor, pageSize);
     if (rows.length === 0) break;
@@ -405,6 +407,7 @@ async function migrateL0Records(sourceStore: VectorStore, targetStore: Migration
   const useBatch = typeof targetStore.upsertL0Batch === "function";
 
   // eslint-disable-next-line no-constant-condition
+  // 中文：eslint-disable-next-line no-constant-condition
   while (true) {
     const rows = sourceStore.queryL0RecordsCursor(cursor, pageSize);
     if (rows.length === 0) break;

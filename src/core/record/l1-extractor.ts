@@ -10,6 +10,13 @@
  * 2. Call LLM to extract scene-segmented memories
  * 3. Batch conflict detection against existing records
  * 4. Write to L1 JSONL files
+ * 中文：L1 Memory Extractor: 从L0对话消息中使用单次LLM调用和JSON模式结构化输出提取结构化的记忆。
+ * v3: 与Kenty的提示对齐——一次调用进行场景分割+记忆提取，随后进行批量冲突检测。
+ * 流程：
+ * 1. 读取L0最近的消息（分为背景消息+新消息）
+ * 2. 调用LLM提取场景分割的记忆
+ * 3. 批量冲突检测与现有记录对比
+ * 4. 写入L1 JSONL文件
  */
 
 import type { ConversationMessage } from "../conversation/l0-recorder.js";
@@ -31,6 +38,7 @@ const TAG = "[memory-tdai][l1-extractor]";
 // ============================
 
 /** A scene segment with its extracted memories (LLM output) */
+/** 中文：一个包含其提取记忆的场景片段（LLM输出） */
 interface SceneSegment {
   scene_name: string;
   message_ids: string[];
@@ -45,22 +53,29 @@ interface SceneSegment {
 
 export interface L1ExtractionResult {
   /** Whether extraction succeeded */
+  /** 中文：提取是否成功 */
   success: boolean;
   /** Number of memories extracted */
+  /** 中文：提取的记忆数量 */
   extractedCount: number;
   /** Number of memories actually stored (after dedup) */
+  /** 中文：去重后实际存储的记忆数量 */
   storedCount: number;
   /** The memory records that were stored */
+  /** 中文：被存储的记忆记录 */
   records: MemoryRecord[];
   /** Scene names detected during extraction */
+  /** 中文：提取期间检测到的场景名称 */
   sceneNames: string[];
   /** Last scene name (for continuity in next extraction) */
+  /** 中文：上次提取的场景名称（用于下次提取连续性） */
   lastSceneName?: string;
 }
 
 // ============================
 // Core function
 // ============================
+// 中文：核心功能
 
 /**
  * Run the full L1 extraction pipeline on conversation messages.
@@ -71,6 +86,13 @@ export interface L1ExtractionResult {
  * @param config - OpenClaw config (for LLM access)
  * @param options - Extraction options
  * @param logger - Optional logger
+ * 中文：在对话消息上运行完整的L1提取管道。
+ * @param messages - 过滤后的对话消息（来自L0或直接来自钩子）
+ * @param sessionKey - 会话键
+ * @param baseDir - 基础数据目录 (~/.openclaw/memory-tdai/)
+ * @param config - OpenClaw配置（用于LLM访问）
+ * @param options - 提取选项
+ * @param logger - 可选的日志记录器
  */
 export async function extractL1Memories(params: {
   messages: ConversationMessage[];
@@ -80,33 +102,45 @@ export async function extractL1Memories(params: {
   config: unknown;
   options?: {
     /** Max new messages to send in one extraction call */
+    /** 中文：单次提取调用中发送的最大新消息数 */
     maxMessagesPerExtraction?: number;
     /** Max background messages for context */
+    /** 中文：上下文中的最大背景消息数 */
     maxBackgroundMessages?: number;
     /** Enable conflict detection */
+    /** 中文：启用冲突检测 */
     enableDedup?: boolean;
     /** Max memories extracted per call */
+    /** 中文：每次提取调用中提取的最大记忆数量 */
     maxMemoriesPerSession?: number;
     /** LLM model override */
+    /** 中文：LLM模型覆盖 */
     model?: string;
     /** Previous scene name for continuity */
+    /** 中文：连续使用的前一个场景名称 */
     previousSceneName?: string;
     /** Vector store for cosine similarity candidate recall */
+    /** 中文：余弦相似度候选召回的向量存储 */
     vectorStore?: IMemoryStore;
     /** Embedding service for computing query vectors */
+    /** 中文：用于计算查询向量的服务 */
     embeddingService?: EmbeddingService;
     /** Top-K candidates for conflict recall (default: 5) */
+    /** 中文：冲突召回的Top-K候选项（默认：5） */
     conflictRecallTopK?: number;
     /** Override embedding timeout for capture-path calls (milliseconds) */
+    /** 中文：覆盖capture-path调用的嵌入超时（毫秒） */
     embeddingTimeoutMs?: number;
     /**
      * Host-neutral LLM runner. When provided, used instead of creating
      * a CleanContextRunner (decouples from OpenClaw runtime).
+     * 中文：主机无关的LLM运行器。当提供时，代替创建CleanContextRunner（解耦自OpenClaw运行时）。
      */
     llmRunner?: LLMRunner;
   };
   logger?: Logger;
   /** Plugin instance ID for metric reporting (optional — metrics skipped if absent) */
+  /** 中文：用于指标报告的插件实例ID（可选——若缺失则跳过指标） */
   instanceId?: string;
 }): Promise<L1ExtractionResult> {
   const { messages, sessionKey, sessionId, baseDir, config, logger, instanceId: metricInstanceId } = params;
@@ -126,6 +160,7 @@ export async function extractL1Memories(params: {
   // Quality gate: filter messages through L1 extraction rules (length, symbols,
   // prompt injection, etc.) before sending to the LLM. L0 deliberately captures
   // everything; the strict filtering happens here at L1 stage.
+  // 中文：质量门：通过L1提取规则（长度、符号、提示注入等）过滤消息后再发送给LLM。L0故意捕获一切；严格的过滤在这里的L1阶段发生。
   const qualifiedMessages = messages.filter((m) => shouldExtractL1(m.content));
   if (qualifiedMessages.length < messages.length) {
     logger?.debug?.(
@@ -140,6 +175,7 @@ export async function extractL1Memories(params: {
   }
 
   // Split messages into background (older) + new (recent)
+  // 中文：将消息拆分为背景（较旧的）+ 新（最近的）
   const newMessages = qualifiedMessages.slice(-maxNewMessages);
   const bgEndIdx = qualifiedMessages.length - newMessages.length;
   const backgroundMessages = bgEndIdx > 0
@@ -149,6 +185,7 @@ export async function extractL1Memories(params: {
   logger?.debug?.(`${TAG} Extracting from ${newMessages.length} new messages (+ ${backgroundMessages.length} background) [${qualifiedMessages.length} qualified from ${messages.length} input]`);
 
   // Step 1: LLM extraction (scene segmentation + memory extraction)
+  // 中文：步骤1：LLM提取（场景分割+记忆提取)
   let scenes: SceneSegment[];
   try {
     scenes = await callLlmExtraction({
@@ -167,6 +204,7 @@ export async function extractL1Memories(params: {
   }
 
   // Flatten all memories across scenes
+  // 中文：扁平化所有场景的记忆
   const allExtracted: ExtractedMemory[] = [];
   const sceneNames: string[] = [];
 
@@ -203,6 +241,7 @@ export async function extractL1Memories(params: {
   }
 
   // Limit per session
+  // 中文：限制每会话
   let extracted = allExtracted;
   if (extracted.length > maxMemoriesPerSession) {
     logger?.debug?.(`${TAG} Limiting from ${extracted.length} to ${maxMemoriesPerSession} memories per session`);
@@ -210,12 +249,14 @@ export async function extractL1Memories(params: {
   }
 
   // Assign temporary IDs to extracted memories (needed for batch dedup)
+  // 中文：为提取的记忆分配临时ID（用于批量去重)
   const memoriesWithIds = extracted.map((m) => ({
     ...m,
     record_id: generateMemoryId(),
   }));
 
   // Step 2: Batch Conflict Detection + Write
+  // 中文：步骤2：批量冲突检测+写入
   let storedRecords: MemoryRecord[];
 
   if (enableDedup) {
@@ -253,8 +294,10 @@ export async function extractL1Memories(params: {
   logger?.info(`${TAG} Extraction complete: extracted=${extracted.length}, stored=${storedRecords.length}`);
 
   // ── l1_extraction metric ──
+  // 中文：── l1_extraction指标 ──
   if (metricInstanceId && logger) {
     // Build type distribution of stored memories
+    // 中文：构建存储记忆的类型分布
     const memoriesByType: Record<string, number> = {};
     for (const r of storedRecords) {
       memoriesByType[r.type] = (memoriesByType[r.type] ?? 0) + 1;
@@ -289,9 +332,11 @@ export async function extractL1Memories(params: {
 // ============================
 // LLM call
 // ============================
+// 中文：LLM调用
 
 /**
  * Call LLM to extract scene-segmented memories from conversation messages.
+ * 中文：调用语言模型从对话消息中提取场景分割的记忆.
  */
 async function callLlmExtraction(params: {
   newMessages: ConversationMessage[];
@@ -301,6 +346,7 @@ async function callLlmExtraction(params: {
   logger?: Logger;
   model?: string;
   /** Host-neutral LLM runner — when provided, used instead of CleanContextRunner. */
+  /** 中文：无宿主依赖的语言模型运行器——如有提供，将替代CleanContextRunner. */
   llmRunner?: LLMRunner;
 }): Promise<SceneSegment[]> {
   const { newMessages, backgroundMessages, previousSceneName, config, logger, model, llmRunner } = params;
@@ -312,6 +358,7 @@ async function callLlmExtraction(params: {
   });
 
   // [l1-debug] ENTRY — what are we about to ask the LLM to extract?
+  // 中文：[l1-debug] 入口 —— 我们即将要求语言模型提取什么？
   logger?.debug?.(
     `${TAG} [l1-debug] ENTRY taskId=l1-extraction, newMsgs=${newMessages.length}, bgMsgs=${backgroundMessages.length}, userPromptLen=${userPrompt.length}, sysPromptLen=${EXTRACT_MEMORIES_SYSTEM_PROMPT.length}, model=${model ?? "(default)"}, previousSceneName=${previousSceneName ? JSON.stringify(previousSceneName) : "(none)"}, runnerKind=${llmRunner ? "llmRunner" : "CleanContextRunner"}`,
   );
@@ -320,6 +367,7 @@ async function callLlmExtraction(params: {
 
   if (llmRunner) {
     // Use the host-neutral LLMRunner interface
+    // 中文：使用无宿主依赖的语言模型接口
     result = await llmRunner.run({
       prompt: userPrompt,
       systemPrompt: EXTRACT_MEMORIES_SYSTEM_PROMPT,
@@ -328,6 +376,7 @@ async function callLlmExtraction(params: {
     });
   } else {
     // Fallback: create CleanContextRunner (OpenClaw path)
+    // 中文：备用方案：创建CleanContextRunner（OpenClaw路径）
     const runner = new CleanContextRunner({
       config,
       modelRef: model,
@@ -349,20 +398,25 @@ async function callLlmExtraction(params: {
 /**
  * Parse the LLM's JSON response into SceneSegment array.
  * Expected format: [{scene_name, message_ids, memories: [...]}]
+ * 中文：将语言模型的JSON响应解析为SceneSegment数组。
+ * 预期格式: [{scene_name, message_ids, memories: [...]}]
  */
 function parseExtractionResult(raw: string, logger?: Logger): SceneSegment[] {
   try {
     // Strip markdown code block wrappers if present
+    // 中文：如果存在，移除Markdown代码块包裹
     let cleaned = raw.trim();
     if (cleaned.startsWith("```")) {
       cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
     }
 
     // Try to extract JSON array
+    // 中文：尝试提取JSON数组
     const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
     if (!arrayMatch) {
       logger?.warn?.(`${TAG} No JSON array found in extraction response`);
       // [l1-debug] NO_JSON — dump the full raw so we can see what the LLM actually said
+      // 中文：[l1-debug] NO_JSON — 将完整原始数据dump出来，以便查看LLM实际说了什么
       const rawPreview = raw.slice(0, 2048);
       logger?.warn?.(
         `${TAG} [l1-debug] NO_JSON taskId=l1-extraction, rawLen=${raw.length}, cleanedLen=${cleaned.length}, rawFull=${JSON.stringify(rawPreview)}${raw.length > 2048 ? `…(+${raw.length - 2048})` : ""}`,
@@ -371,6 +425,7 @@ function parseExtractionResult(raw: string, logger?: Logger): SceneSegment[] {
     }
 
     // Sanitize control characters inside JSON string literals that LLM may produce
+    // 中文：清理LLM可能生成的JSON字符串字面量内的控制字符
     const sanitized = sanitizeJsonForParse(arrayMatch[0]);
     const parsed = JSON.parse(sanitized) as unknown[];
 
@@ -411,9 +466,11 @@ function parseExtractionResult(raw: string, logger?: Logger): SceneSegment[] {
 // ============================
 // Write helpers
 // ============================
+// 中文：编写辅助函数
 
 /**
  * Apply batch dedup decisions — write memories according to their decisions.
+ * 中文：应用批量去重决策——根据其决定写入记忆.
  */
 async function applyDecisions(params: {
   memoriesWithIds: Array<ExtractedMemory & { record_id: string }>;
@@ -429,6 +486,7 @@ async function applyDecisions(params: {
   const storedRecords: MemoryRecord[] = [];
 
   // Build a map from record_id → decision
+  // 中文：构建一个record_id → 决定的映射表
   const decisionMap = new Map<string, DedupDecision>();
   for (const d of decisions) {
     decisionMap.set(d.record_id, d);
@@ -468,6 +526,7 @@ async function applyDecisions(params: {
 
 /**
  * Store all memories directly (no dedup).
+ * 中文：直接存储所有记忆（不进行去重）。
  */
 async function storeAllDirectly(
   memoriesWithIds: Array<ExtractedMemory & { record_id: string }>,
@@ -512,6 +571,7 @@ async function storeAllDirectly(
 // ============================
 // Helpers
 // ============================
+// 中文：辅助函数
 
 const VALID_TYPES: MemoryType[] = ["persona", "episodic", "instruction"];
 
@@ -521,8 +581,10 @@ function normalizeType(raw: string): MemoryType | null {
     return lower as MemoryType;
   }
   // Handle legacy type names
+  // 中文：处理遗留类型名称
   if (lower === "episode") return "episodic";
   if (lower === "instruct") return "instruction";
   if (lower === "preference") return "persona"; // fold preference into persona
+  // 中文：将折纸偏好融入人格
   return null;
 }

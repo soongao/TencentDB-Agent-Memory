@@ -8,6 +8,13 @@
  *   - hybrid: keyword + embedding merged with RRF
  * - L3 persona injection
  * - L2 scene navigation (full injection, LLM decides relevance)
+ * 中文：自动回忆钩子（v3）：在代理开始处理之前，注入相关记忆和人设到代理上下文中。
+ * - 使用可配置策略搜索L1记忆（关键词/向量/混合）
+ * - 关键词：FTS5 BM25（需要FTS5；不可用时返回空值）
+ * - 向量：VectorStore余弦相似度
+ * - 混合：关键词+向量结合RRF
+ * - 人设L3注入
+ * - 场景导航L2（完全注入，由LLM决定相关性）
  */
 
 import fs from "node:fs/promises";
@@ -31,6 +38,7 @@ const RECALL_LINE_SEPARATOR = "\n";
 /**
  * Memory tools usage guide — injected at the end of memory context so the
  * main agent knows how to actively retrieve deeper information.
+ * 中文：内存工具使用指南——注入在内存上下文末尾，以便主要代理能够主动检索更深层次的信息。
  */
 const MEMORY_TOOLS_GUIDE = `<memory-tools-guide>
 ## 记忆工具调用指南
@@ -48,6 +56,7 @@ const MEMORY_TOOLS_GUIDE = `<memory-tools-guide>
 </memory-tools-guide>`
 
 /** A single recalled L1 memory with its search score and type. */
+/** 中文：一次召回的L1记忆及其搜索分数和类型。 */
 export interface RecalledMemory {
   content: string;
   score: number;
@@ -56,16 +65,22 @@ export interface RecalledMemory {
 
 export interface RecallResult {
   /** L1 relevant memories — prepended to user prompt text (dynamic, per-turn) */
+  /** 中文：L1相关记忆——前置到用户提示文本中（动态，每回合不同） */
   prependContext?: string;
   /** Stable recall context appended to system prompt (persona, scene nav, tools guide — cacheable) */
+  /** 中文：稳定的回忆上下文追加到系统提示中（人设、场景导航、工具指南——可缓存） */
   appendSystemContext?: string;
 
   // ── Metric payload (for pendingRecallCache in index.ts) ──
+  // 中文：── 指标载荷（对于index.ts中的pendingRecallCache）──
   /** L1 memories that were recalled (with scores), for metric reporting */
+  /** 中文：被召回的L1记忆（带有分数），用于指标报告 */
   recalledL1Memories?: RecalledMemory[];
   /** L3 Persona raw content loaded during recall (null if none) */
+  /** 中文：在召回期间加载的人设原始内容（无则为null） */
   recalledL3Persona?: string | null;
   /** Effective search strategy used */
+  /** 中文：实际使用的搜索策略 */
   recallStrategy?: string;
 }
 
@@ -113,6 +128,7 @@ async function performAutoRecallInner(params: {
   const tRecallStart = performance.now();
 
   // Search relevant memories (L1 layer) — skip only when userText is empty/undefined
+  // 中文：搜索相关记忆（L1层）——当userText为空/未定义时跳过
   const tSearchStart = performance.now();
   let memoryLines: string[] = [];
   let effectiveStrategy = "skipped";
@@ -128,6 +144,7 @@ async function performAutoRecallInner(params: {
     memoryLines = applyRecallBudget(memoryLines, cfg.recall, logger);
 
     // Extract structured RecalledMemory from formatted lines for metric reporting
+    // 中文：从格式化行中提取结构化的RecalledMemory以进行指标报告
     recalledL1Memories = memoryLines.map((line) => {
       const match = line.match(/^-\s+\[([^\]]+)\]\s+(.+?)(?:\s*\(活动时间:.*\))?$/);
       if (match) {
@@ -142,6 +159,7 @@ async function performAutoRecallInner(params: {
   const tSearchEnd = performance.now();
 
   // Read persona (L3 layer)
+  // 中文：读取人设（L3层）
   const tPersonaStart = performance.now();
   let personaContent: string | undefined;
   try {
@@ -156,6 +174,7 @@ async function performAutoRecallInner(params: {
   const tPersonaEnd = performance.now();
 
   // Load full scene navigation (L2 layer)
+  // 中文：加载完整场景导航（L2层）
   const tSceneStart = performance.now();
   let sceneNavigation: string | undefined;
   try {
@@ -193,6 +212,14 @@ async function performAutoRecallInner(params: {
   // prependContext (user prompt prefix — dynamic, per-turn):
   //   L1 relevant memories — different every turn, moved out of system prompt
   //   so it doesn't bust the system prompt cache.
+  // 中文：将回忆上下文拆分为稳定和动态部分以优化提示缓存。
+  // appendSystemContext (系统提示结束 — 稳定，可缓存):
+  // persona, scene navigation, memory tools guide
+  // 这些内容变化不频繁；当各轮次内容相同时，
+  // 具有提示缓存功能的提供者（Anthropic/OpenAI）可以缓存此区域。
+  // prependContext (用户提示前缀 — 动态，每轮次):
+  // L1相关记忆 — 每轮次不同，移出系统提示
+  // 以免破坏系统提示缓存。
   const stableParts: string[] = [];
   if (personaContent) {
     stableParts.push(`<user-persona>\n${personaContent}\n</user-persona>`);
@@ -202,6 +229,7 @@ async function performAutoRecallInner(params: {
   }
 
   // Dynamic part: L1 relevant memories (changes every turn) → prependContext (user prompt)
+  // 中文：动态部分：L1相关记忆（每轮次变化） → prependContext (用户提示)
   let prependContext: string | undefined;
   if (memoryLines.length > 0) {
     prependContext =
@@ -211,6 +239,8 @@ async function performAutoRecallInner(params: {
   // Append memory tools usage guide to the stable part so the agent knows
   // how to actively retrieve deeper context when the injected snippets
   // are not enough. This is static content and benefits from caching.
+  // 中文：将记忆工具使用指南附加到稳定部分以便于代理知道
+  // 在注入片段不足时如何主动检索更深的上下文。这是静态内容，受益于缓存。
   if (stableParts.length > 0 || prependContext) {
     stableParts.push(MEMORY_TOOLS_GUIDE);
   }
@@ -243,6 +273,7 @@ async function performAutoRecallInner(params: {
 // ============================
 // Multi-strategy search dispatcher
 // ============================
+// 中文：多策略搜索调度器
 
 interface ScoredRecord {
   record: MemoryRecord;
@@ -250,6 +281,7 @@ interface ScoredRecord {
 }
 
 /** Timing breakdown from memory search */
+/** 中文：从记忆搜索的时间分解 */
 interface SearchTiming {
   ftsMs: number;
   embeddingMs: number;
@@ -268,6 +300,9 @@ interface SearchResult {
  * This is a thin wrapper around `searchMemories` that also captures
  * the recalled memory metadata for metric reporting (agent_turn event).
  * It parses the returned formatted lines to extract type/content info.
+ * 中文：搜索记忆并返回格式化行和结构化详情。
+ * 这是一层围绕`searchMemories`的薄包装器，还会捕获回忆的记忆元数据以供指标报告（agent_turn事件）。
+ * 它解析返回的格式化行以提取类型/内容信息。
  */
 async function searchMemoriesWithDetails(
   userText: string,
@@ -304,6 +339,11 @@ async function searchMemoriesWithDetails(
  * - "hybrid": merge both keyword and embedding results with RRF (Reciprocal Rank Fusion)
  *
  * Falls back to keyword if embedding resources are unavailable.
+ * 中文：使用配置的策略进行搜索记忆。
+ * - "keyword"：基于JSONL关键词（Jaccard相似度）——无需嵌入
+ * - "embedding"：向量存储余弦相似度——需要vectorStore + embeddingService
+ * - "hybrid"：合并关键词和嵌入结果，使用RRF（互惠排名融合）
+ * 如果嵌入资源不可用，则回退到关键词。
  */
 async function searchMemories(
   userText: string,
@@ -317,6 +357,7 @@ async function searchMemories(
   const emptyResult: SearchResult = { lines: [], timing: { ftsMs: 0, embeddingMs: 0, ftsHits: 0, embeddingHits: 0 } };
   // Strip gateway-injected inbound metadata (Sender, timestamps, media markers,
   // base64 image data, etc.) so FTS / embedding queries are based on pure user intent.
+  // 中文：剥离网关注入的入站元数据（发送者、时间戳、媒体标记、base64图像数据等），以便FTS / 嵌入查询基于纯粹用户意图。
   const cleanText = sanitizeText(userText);
 
   if (cleanText.length < 2) {
@@ -343,6 +384,7 @@ async function searchMemories(
   );
 
   // Determine effective strategy (fall back to keyword if embedding not available)
+  // 中文：确定有效的策略（若无可用嵌入则回退至关键词）
   let effectiveStrategy = strategy;
   if ((strategy === "embedding" || strategy === "hybrid") && !embeddingAvailable) {
     logger?.warn?.(
@@ -355,6 +397,8 @@ async function searchMemories(
 
   // Resolve per-call embedding timeout for recall path.
   // Falls back to global embedding.timeoutMs when recallTimeoutMs is not configured.
+  // 中文：为回忆路径解决每次调用的嵌入超时。
+  // 当recallTimeoutMs未配置时，回退到全局embedding.timeoutMs。
   const recallEmbeddingTimeoutMs = cfg.embedding?.recallTimeoutMs ?? cfg.embedding?.timeoutMs;
   const embeddingCallOpts: EmbeddingCallOptions = { timeoutMs: recallEmbeddingTimeoutMs };
 
@@ -374,6 +418,7 @@ async function searchMemories(
     // Hybrid: if the store natively supports hybrid search (e.g. TCVDB does
     // server-side dense + sparse + RRF in a single API call), short-circuit
     // to avoid a redundant second HTTP request and a wasted local embed().
+    // 中文：混合：如果存储原生支持混合搜索（例如TCVDB在单个API调用中进行服务器端密集+稀疏+RRF），则短路以避免冗余的第二次HTTP请求和浪费的地方嵌入()。
     if (vectorStore?.getCapabilities().nativeHybridSearch) {
       const tNative = performance.now();
       const results = await vectorStore.searchL1Hybrid({ query: cleanText, topK: maxResults });
@@ -384,6 +429,7 @@ async function searchMemories(
     }
 
     // Fallback: run keyword + embedding in parallel, merge with client-side RRF (SQLite path)
+    // 中文：回退：并行运行关键词 + 嵌入，使用客户端侧RRF（SQLite路径）合并。
     return await searchHybrid(cleanText, pluginDataDir, maxResults, threshold, vectorStore!, embeddingService!, logger, embeddingCallOpts);
   } catch (err) {
     logger?.warn?.(`${TAG} Memory search failed (strategy=${effectiveStrategy}): ${err instanceof Error ? err.message : String(err)}`);
@@ -394,6 +440,7 @@ async function searchMemories(
 // ============================
 // Strategy: Keyword (FTS5 BM25, no in-memory fallback)
 // ============================
+// 中文：策略：关键词（FTS5 BM25，无内存中 fallback）
 
 async function searchByKeyword(
   userText: string,
@@ -404,6 +451,7 @@ async function searchByKeyword(
   vectorStore?: IMemoryStore,
 ): Promise<string[]> {
   // Prefer FTS5 if available
+  // 中文：Prefer FTS5 if available
   if (vectorStore?.isFtsAvailable()) {
     const ftsQuery = buildFtsQuery(userText);
     if (ftsQuery) {
@@ -426,6 +474,7 @@ async function searchByKeyword(
         // BM25 absolute scores are unreliable when the document set is very
         // small (e.g. 1–3 records) because IDF approaches 0.  In that case,
         // trust FTS5's MATCH + rank ordering and return the top results anyway.
+        // 中文：BM25绝对分数在文档集非常小（例如1–3条记录）时不可靠，因为IDF接近0。在这种情况下，信任FTS5的MATCH + 排序优先级并返回顶级结果。
         if (ftsResults.length <= maxResults) {
           logger?.debug?.(
             `${TAG} [keyword-fts] All ${ftsResults.length} results below threshold=${threshold} ` +
@@ -439,6 +488,7 @@ async function searchByKeyword(
   }
 
   // FTS5 not available or returned no results — skip in-memory fallback to avoid O(N) full scan
+  // 中文：FTS5不可用或未返回结果——跳过内存中回退以避免O(N)全扫描
   logger?.debug?.(`${TAG} [keyword] FTS5 unavailable or no results, skipping keyword search`);
   return [];
 }
@@ -446,6 +496,7 @@ async function searchByKeyword(
 // ============================
 // Strategy: Embedding (VectorStore cosine)
 // ============================
+// 中文：策略：嵌入（向量存储余弦）
 
 async function searchByEmbedding(
   userText: string,
@@ -466,6 +517,7 @@ async function searchByEmbedding(
     `searching top-${maxResults * 2}...`,
   );
   // Retrieve more candidates for subsequent filtering
+  // 中文：检索更多候选项供后续筛选
   const vecResults: L1SearchResult[] = await vectorStore.searchL1Vector(queryEmbedding, maxResults * 2);
 
   if (vecResults.length === 0) {
@@ -497,6 +549,7 @@ async function searchByEmbedding(
 // ============================
 // Strategy: Hybrid (Keyword + Embedding + RRF)
 // ============================
+// 中文：策略：混合（关键词 + 嵌入 + RRF）
 
 /**
  * Hybrid search: run keyword (FTS5) and embedding in parallel, merge with
@@ -507,6 +560,7 @@ async function searchByEmbedding(
  *
  * If FTS5 is unavailable, the keyword side returns empty and RRF uses
  * embedding results only.
+ * 中文：混合搜索：并行运行关键词（FTS5）和嵌入，使用互惠排名融合（RRF）结合排名列表。RRF分数为记录在第r位的得分为1 / (k + r)，其中k=60是一个常数。如果记录同时出现在两个列表中，则其RRF得分相加。如果FTS5不可用，关键词一侧返回空，并且RRF仅使用嵌入结果。
  */
 async function searchHybrid(
   userText: string,
@@ -519,14 +573,18 @@ async function searchHybrid(
   embeddingCallOpts?: EmbeddingCallOptions,
 ): Promise<SearchResult> {
   // Run keyword and embedding searches in parallel
+  // 中文：并行运行关键词和嵌入搜索
   const candidateK = maxResults * 3; // retrieve more for merging
+  // 中文：获取更多以进行合并
 
   const [keywordResult, embeddingResult] = await Promise.all([
     // Keyword search: FTS5 only (no in-memory fallback)
+    // 中文：关键词搜索：仅FTS5（无内存Fallback）
     (async () => {
       const tStart = performance.now();
       try {
         // Try FTS5 first
+        // 中文：优先尝试FTS5
         if (vectorStore.isFtsAvailable()) {
           const ftsQuery = buildFtsQuery(userText);
           if (ftsQuery) {
@@ -534,6 +592,7 @@ async function searchHybrid(
             if (ftsResults.length > 0) {
               logger?.debug?.(`${TAG} [hybrid-keyword-fts] FTS5 found ${ftsResults.length} candidates`);
               // Convert FtsSearchResult to ScoredRecord for RRF merge
+              // 中文：将FtsSearchResult转换为ScoredRecord以进行RRF合并
               const records = ftsResults.map((r): ScoredRecord => ({
                 record: {
                   id: r.record_id,
@@ -556,6 +615,7 @@ async function searchHybrid(
           }
         }
         // FTS5 not available or returned no results — skip in-memory fallback
+        // 中文：FTS5不可用或未返回结果——跳过内存Fallback
         logger?.debug?.(`${TAG} [hybrid-keyword] FTS5 unavailable or no results, skipping keyword part`);
         return { records: [] as ScoredRecord[], ms: performance.now() - tStart };
       } catch (err) {
@@ -564,6 +624,7 @@ async function searchHybrid(
       }
     })(),
     // Embedding search
+    // 中文：嵌入式搜索
     (async () => {
       const tStart = performance.now();
       try {
@@ -597,12 +658,15 @@ async function searchHybrid(
   }
 
   // RRF merge: k=60 is a standard constant from the RRF paper
+  // 中文：RRF合并：k=60是来自RRF论文的标准常量
   const RRF_K = 60;
 
   // Map: record_id → { rrfScore, formatable }
+  // 中文：映射：record_id → { rrfScore, formatable }
   const mergedMap = new Map<string, { rrfScore: number; formatable: FormatableMemory }>();
 
   // Process keyword results
+  // 中文：处理关键词结果
   for (let rank = 0; rank < keywordResults.length; rank++) {
     const r = keywordResults[rank];
     const id = r.record.id;
@@ -616,6 +680,7 @@ async function searchHybrid(
   }
 
   // Process embedding results
+  // 中文：处理嵌入结果
   for (let rank = 0; rank < embeddingResults.length; rank++) {
     const r = embeddingResults[rank];
     const id = r.record_id;
@@ -629,6 +694,7 @@ async function searchHybrid(
   }
 
   // Sort by combined RRF score and take top results
+  // 中文：按综合RRF分数排序并取top结果
   const sorted = [...mergedMap.entries()]
     .sort((a, b) => b[1].rrfScore - a[1].rrfScore)
     .slice(0, maxResults);
@@ -648,6 +714,7 @@ async function searchHybrid(
 // ============================
 // Unified memory line formatter
 // ============================
+// 中文：统一内存行格式化器
 
 /**
  * Format a single memory record into a rich natural-language line for prompt injection.
@@ -677,12 +744,15 @@ interface FormatableMemory {
 
 function formatMemoryLine(m: FormatableMemory): string {
   // 1. Type tag + optional scene name
+  // 中文：1. 类型标签 + 可选场景名称
   const tag = m.scene_name ? `${m.type}|${m.scene_name}` : m.type;
 
   // 2. Content (core)
+  // 中文：2. 内容（核心）
   let line = `- [${tag}] ${m.content}`;
 
   // 3. Time info — prefer activity_start/end range; fall back to timestamp as point-in-time
+  // 中文：3. 时间信息 — 优先使用活动开始/结束范围；否则退而求其次使用时间戳作为时间点
   const start = formatTimestamp(m.activity_start_time);
   const end = formatTimestamp(m.activity_end_time);
   const point = formatTimestamp(m.timestamp);
@@ -701,6 +771,7 @@ function formatMemoryLine(m: FormatableMemory): string {
     line += ` (活动时间: ${point})`;
   }
   // If all three are empty → no time info appended (graceful)
+  // 中文：如果三项都为空 → 不附加时间信息（优雅处理）
 
   return line;
 }
@@ -780,6 +851,7 @@ function truncateRecallLine(line: string, maxChars: number): string {
   // Count and slice by code point, not UTF-16 code unit, so a cut never lands
   // between the halves of a surrogate pair (which would corrupt a non-BMP
   // character to U+FFFD when the line is UTF-8 encoded for the request).
+  // 中文：按代码点计数和切片，而不是UTF-16代码单元，因此切割永远不会落在代理对的中间（这会在请求以UTF-8编码时将非BMP字符损坏为U+FFFD）。
   const cps = Array.from(line);
   if (cps.length <= maxChars) return line;
   if (maxChars <= RECALL_TRUNCATION_SUFFIX.length) {
@@ -794,6 +866,11 @@ function truncateRecallLine(line: string, maxChars: number): string {
  * - If the time part is 00:00:00 → show date only (e.g. "2025-03-01")
  * - Otherwise → show full ISO 8601 with offset (e.g. "2025-03-01T14:30:00+08:00")
  * - Returns undefined for empty/invalid inputs.
+ * 中文：将ISO 8601时间戳格式化为带时区的简洁显示字符串。
+ * 使用time模块配置的时间区。
+ * - 如果时间部分是00:00:00 → 显示日期（例如"2025-03-01"
+ * - 否则 → 显示完整的ISO 8601格式，带时区偏移量（例如"2025-03-01T14:30:00+08:00"
+ * - 空或无效输入返回undefined。
  */
 function formatTimestamp(ts: string | undefined): string | undefined {
   if (!ts) return undefined;
@@ -801,11 +878,13 @@ function formatTimestamp(ts: string | undefined): string | undefined {
   if (isNaN(d.getTime())) return undefined;
 
   // Check if time part is midnight UTC (date-only semantics)
+  // 中文：检查时间部分是否为UTC午夜（仅日期语义）
   const match = ts.match(/^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2})(?::\d{2})?)?/);
   if (match) {
     const timePart = match[2];
     if (!timePart || timePart === "00:00") {
       return match[1]; // date-only, no timezone conversion needed
+      // 中文：仅日期，无需时区转换
     }
   }
 
@@ -815,6 +894,8 @@ function formatTimestamp(ts: string | undefined): string | undefined {
 /**
  * Build a FormatableMemory from a full MemoryRecord (keyword search path).
  * Handles empty metadata, empty timestamps array gracefully.
+ * 中文：从完整的MemoryRecord（关键词搜索路径）构建FormatableMemory。
+ * 优雅处理空元数据和空的时间戳数组。
  */
 function recordToFormatable(record: MemoryRecord): FormatableMemory {
   const meta = record.metadata as { activity_start_time?: string; activity_end_time?: string } | undefined;
@@ -831,6 +912,8 @@ function recordToFormatable(record: MemoryRecord): FormatableMemory {
 /**
  * Build a FormatableMemory from a VectorSearchResult (embedding search path).
  * Handles empty/invalid metadata_json, empty timestamp_str gracefully.
+ * 中文：从VectorSearchResult（嵌入式搜索路径）构建FormatableMemory。
+ * 优雅处理无效或空的metadata_json，以及空的时间戳_str。
  */
 function vectorResultToFormatable(r: L1SearchResult): FormatableMemory {
   let activityStart: string | undefined;
@@ -841,6 +924,7 @@ function vectorResultToFormatable(r: L1SearchResult): FormatableMemory {
       activityStart = meta?.activity_start_time || undefined;
       activityEnd = meta?.activity_end_time || undefined;
     } catch { /* ignore parse errors — treat as no metadata */ }
+    // 中文：忽略解析错误——视为无元数据
   }
   return {
     type: r.type,
@@ -855,6 +939,8 @@ function vectorResultToFormatable(r: L1SearchResult): FormatableMemory {
 /**
  * Build a FormatableMemory from an FtsSearchResult (FTS5 keyword search path).
  * Handles empty/invalid metadata_json, empty timestamp_str gracefully.
+ * 中文：从FtsSearchResult（FTS5关键词搜索路径）构建FormatableMemory。
+ * 优雅处理无效或空的metadata_json，以及空的时间戳_str。
  */
 function ftsResultToFormatable(r: L1FtsResult): FormatableMemory {
   let activityStart: string | undefined;
@@ -865,6 +951,7 @@ function ftsResultToFormatable(r: L1FtsResult): FormatableMemory {
       activityStart = meta?.activity_start_time || undefined;
       activityEnd = meta?.activity_end_time || undefined;
     } catch { /* ignore parse errors — treat as no metadata */ }
+    // 中文：忽略解析错误——视为无元数据
   }
   return {
     type: r.type,

@@ -2,6 +2,8 @@
  * L1.5 Task Judgment Prompt — migrated from context-offload-server.
  *
  * Determines task lifecycle: completion, continuation, new task detection.
+ * 中文：L1.5任务判断提示 — 迁移自context-offload-server。
+ * 确定任务生命周期：完成、继续、新任务检测。
  */
 
 // ─── System Prompt ───────────────────────────────────────────────────────────
@@ -46,10 +48,13 @@ export interface L15MmdMeta {
 }
 
 // ─── User Prompt Builder ─────────────────────────────────────────────────────
+// 中文：─── 用户提示构建器 ─────────────────────────────────────────────────────
 
 /**
  * Build the L1.5 user prompt for task judgment.
  * Mirrors context-offload-server/internal/service/prompt/BuildL15UserPrompt.
+ * 中文：构建L1.5用户提示用于任务判断。
+ * 镜像context-offload-server/internal/service/prompt/BuildL15UserPrompt.
  */
 export function buildL15UserPrompt(
   recentMessages: string,

@@ -9,6 +9,7 @@
  * Two-phase approach:
  * 1. Candidate search per new memory — vector recall or FTS5 keyword recall (fast, no LLM)
  * 2. Batch LLM judgment on all new memories + their candidate pools (single call)
+ * 中文：L1 内存冲突检测（批模式）：决定在单个LLM调用中如何处理多个新内存与现有记录之间的关系。
  */
 
 import type { ExtractedMemory, MemoryRecord, DedupDecision, MemoryType } from "./l1-writer.js";
@@ -26,6 +27,7 @@ const TAG = "[memory-tdai][l1-dedup]";
 // ============================
 // Core function (batch mode)
 // ============================
+// 中文：核心函数（批模式）
 
 /**
  * Batch conflict detection: compare all new memories against existing records
@@ -47,6 +49,7 @@ const TAG = "[memory-tdai][l1-dedup]";
  * @param embeddingService - Optional embedding service for computing query vectors
  * @param conflictRecallTopK - Top-K candidates to recall per new memory (default: 5)
  * @returns Array of dedup decisions, one per new memory
+ * 中文：批量冲突检测：在一个LLM调用中比较所有新内存与现有记录。
  */
 export async function batchDedup(params: {
   memories: Array<ExtractedMemory & { record_id: string }>;
@@ -54,14 +57,19 @@ export async function batchDedup(params: {
   logger?: Logger;
   model?: string;
   /** Vector store for cosine similarity candidate recall */
+  /** 中文：候选召回策略（三级降级）：1. 向量召回（向量存储 + 嵌入服务）—— 余弦相似度（最佳）2. FTS5 关键词召回（FTS可用时的向量存储）—— BM25 排名（降级）3. 完全跳过冲突检测 —— 所有内存直接进入“存储” */
   vectorStore?: IMemoryStore;
   /** Embedding service for computing query vectors */
+  /** 中文：基于旧JSONL的杰卡德备份已被移除。如果既没有向量搜索也没有FTS，我们跳过去重而不是支付O(N)全文扫描的成本。 */
   embeddingService?: EmbeddingService;
   /** Top-K candidates per new memory (default: 5) */
+  /** 中文：@param memories - 新提取的记忆（带有record_id）@param config - OpenClaw配置（用于LLM访问）@param logger - 可选日志器@param model - 可选模型覆盖@param vectorStore - 可选向量存储，用于余弦相似度搜索@param embeddingService - 可选嵌入服务，用于计算查询向量@param conflictRecallTopK - 每个新内存的候选召回数量（默认：5） */
   conflictRecallTopK?: number;
   /** Override embedding timeout for capture-path calls (milliseconds) */
+  /** 中文：为捕获路径调用覆盖嵌入超时（毫秒） */
   embeddingTimeoutMs?: number;
   /** Host-neutral LLM runner — when provided, used instead of CleanContextRunner. */
+  /** 中文：主机无关的LLM运行器 —— 当提供时，用于替代CleanContextRunner。 */
   llmRunner?: LLMRunner;
 }): Promise<DedupDecision[]> {
   const { memories, config, logger, model, vectorStore, embeddingService, llmRunner } = params;
@@ -79,10 +87,12 @@ export async function batchDedup(params: {
     }));
 
   // Determine what recall capabilities are available
+  // 中文：确定可用的召回能力
   const hasVectorData = vectorStore && (await vectorStore.countL1()) > 0;
   const hasFts = vectorStore?.isFtsAvailable() ?? false;
 
   // Fast path: no recall capability at all → skip dedup
+  // 中文：快速路径：完全没有召回能力 → 跳过去重
   if (!hasVectorData && !hasFts) {
     logger?.debug?.(`${TAG} No vector data and no FTS available, skipping conflict detection for ${memories.length} memories`);
     return storeAll();
@@ -94,10 +104,16 @@ export async function batchDedup(params: {
   //   hasVectorData + embeddingService → Tier 1 vector recall (FTS fallback on error)
   //   otherwise hasFts                → Tier 2 FTS keyword recall
   //   otherwise                       → skip dedup (defensive; shouldn't reach here)
+  // 中文：第一阶段：查找候选项
+  // 决策树（在上述快速路径保护之后，vectorStore 保证非空）:
+  // 有向量数据 + 向量服务 → 第一级向量召回（错误时回退到FTS）
+  // 否则有fts                → 第二级FTS关键词召回
+  // 否则                       → 跳过去重（防御性；不应到达此处）
   let matches: CandidateMatch[];
 
   if (hasVectorData && embeddingService) {
     // === Tier 1: Vector recall mode ===
+    // 中文：=== 第一级：向量召回模式 ===
     logger?.debug?.(`${TAG} Using vector recall mode (topK=${topK})`);
     try {
       matches = await findCandidatesByVector(memories, vectorStore!, embeddingService, topK, logger, params.embeddingTimeoutMs);
@@ -106,6 +122,7 @@ export async function batchDedup(params: {
         `${TAG} Vector recall failed, falling back to FTS keyword: ${err instanceof Error ? err.message : String(err)}`,
       );
       // Degrade to FTS keyword recall
+      // 中文：降级为FTS关键词召回
       if (hasFts) {
         matches = await findCandidatesByFts(memories, vectorStore!, logger);
       } else {
@@ -115,15 +132,18 @@ export async function batchDedup(params: {
     }
   } else if (hasFts) {
     // === Tier 2: FTS keyword recall ===
+    // 中文：=== 第二级：FTS关键词召回 ===
     logger?.debug?.(`${TAG} Using FTS keyword recall mode (no embedding service or no vector data)`);
     matches = await findCandidatesByFts(memories, vectorStore!, logger);
   } else {
     // Shouldn't reach here given the fast-path check above, but be defensive
+    // 中文：根据上述快速路径检查，不应到达此处，但要保持防御性
     logger?.debug?.(`${TAG} No usable recall path, skipping conflict detection`);
     return storeAll();
   }
 
   // Check if any memory has candidates
+  // 中文：检查是否有任何内存中有候选项
   const hasAnyCandidates = matches.some((m) => m.candidates.length > 0);
 
   if (!hasAnyCandidates) {
@@ -132,11 +152,13 @@ export async function batchDedup(params: {
   }
 
   // Phase 2: Batch LLM judgment
+  // 中文：阶段2：批量LLM判断
   return runLlmJudgment(matches, memories, config, logger, model, llmRunner);
 }
 
 /**
  * Phase 2: Run batch LLM judgment on candidate matches.
+ * 中文：阶段2：对候选匹配进行批量LLM判断.
  */
 async function runLlmJudgment(
   matches: CandidateMatch[],
@@ -154,6 +176,7 @@ async function runLlmJudgment(
 
     if (llmRunner) {
       // Use the host-neutral LLMRunner interface
+      // 中文：使用宿主无关的LLMRunner接口
       result = await llmRunner.run({
         prompt: userPrompt,
         systemPrompt: CONFLICT_DETECTION_SYSTEM_PROMPT,
@@ -162,6 +185,7 @@ async function runLlmJudgment(
       });
     } else {
       // Fallback: create CleanContextRunner (OpenClaw path)
+      // 中文：降级处理：创建CleanContextRunner（OpenClaw路径）
       const runner = new CleanContextRunner({
         config,
         modelRef: model,
@@ -194,10 +218,13 @@ async function runLlmJudgment(
 // ============================
 // Candidate recall strategies
 // ============================
+// 中文：候选召回策略
 
 /**
  * Vector-based candidate recall (aligned with prototype):
  * batch-embed new memories → cosine search in VectorStore → exclude self-batch → return candidates.
+ * 中文：基于向量的候选召回（与原型对齐）:
+ * 批量嵌入新记忆 → 余弦搜索在VectorStore → 排除自身批次 → 返回候选.
  */
 async function findCandidatesByVector(
   memories: Array<ExtractedMemory & { record_id: string }>,
@@ -210,6 +237,7 @@ async function findCandidatesByVector(
   const newRecordIds = new Set(memories.map((m) => m.record_id));
 
   // Batch-compute embeddings for all new memories
+  // 中文：批量计算所有新记忆的嵌入
   const texts = memories.map((m) => m.content);
   const embeddings = await embeddingService.embedBatch(texts, embeddingTimeoutMs ? { timeoutMs: embeddingTimeoutMs } : undefined);
 
@@ -220,9 +248,11 @@ async function findCandidatesByVector(
     const queryVec = embeddings[i];
 
     // Vector search top-K (request extra to account for self-batch filtering)
+    // 中文：向量搜索Top-K（额外请求以应对自身批次过滤）
     const searchResults = await vectorStore.searchL1Vector(queryVec, topK + memories.length, mem.content);
 
     // Exclude records from current batch, convert to MemoryRecord format
+    // 中文：排除当前批次的记录，转换为MemoryRecord格式
     const candidates: MemoryRecord[] = searchResults
       .filter((r) => !newRecordIds.has(r.record_id))
       .slice(0, topK)
@@ -255,6 +285,9 @@ async function findCandidatesByVector(
  * FTS5-based candidate recall:
  * Uses the FTS index for efficient BM25-ranked keyword matching.
  * This replaces the old Jaccard word-overlap fallback entirely.
+ * 中文：基于FTS5的候选召回：
+ * 使用FTS索引进行高效的BM25关键词匹配。
+ * 这完全取代了旧的Jaccard词重叠回退机制
  */
 async function findCandidatesByFts(
   memories: Array<ExtractedMemory & { record_id: string }>,
@@ -269,6 +302,7 @@ async function findCandidatesByFts(
     if (ftsQuery) {
       const ftsResults = await vectorStore.searchL1Fts(ftsQuery, 10);
       // Filter out records from the current batch
+      // 中文：过滤掉当前批次的记录
       const candidates: MemoryRecord[] = ftsResults
         .filter((r) => !newRecordIds.has(r.record_id))
         .slice(0, 5)
@@ -299,6 +333,7 @@ async function findCandidatesByFts(
 // ============================
 // Result parsing
 // ============================
+// 中文：结果解析
 
 const VALID_TYPES: MemoryType[] = ["persona", "episodic", "instruction"];
 
@@ -306,6 +341,8 @@ const VALID_TYPES: MemoryType[] = ["persona", "episodic", "instruction"];
  * Parse the LLM's batch conflict detection JSON response.
  *
  * Expected format: [{record_id, action, target_ids, merged_content, merged_type, merged_priority, merged_timestamps}]
+ * 中文：解析LLM批冲突检测JSON响应。
+ * 预期格式：[{record_id, action, target_ids, merged_content, merged_type, merged_priority, merged_timestamps}]
  */
 function parseBatchResult(
   raw: string,
@@ -314,12 +351,14 @@ function parseBatchResult(
 ): DedupDecision[] {
   try {
     // Strip markdown code block wrappers
+    // 中文：去除Markdown代码块包裹
     let cleaned = raw.trim();
     if (cleaned.startsWith("```")) {
       cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
     }
 
     // Extract JSON array
+    // 中文：提取JSON数组
     const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
     if (!arrayMatch) {
       logger?.warn?.(`${TAG} No JSON array found in conflict detection response`);
@@ -327,6 +366,7 @@ function parseBatchResult(
     }
 
     // Sanitize control characters inside JSON string literals that LLM may produce
+    // 中文：清理LLM生成的JSON字符串字面量内的控制字符
     const sanitized = sanitizeJsonForParse(arrayMatch[0]);
     const parsed = JSON.parse(sanitized) as unknown[];
 
@@ -336,6 +376,7 @@ function parseBatchResult(
     }
 
     // Build decisions from LLM output
+    // 中文：从LLM输出中构建决策
     const decisions: DedupDecision[] = [];
     const validActions = ["store", "update", "merge", "skip"];
 
@@ -345,6 +386,7 @@ function parseBatchResult(
 
       const recordId = String(d.record_id ?? "");
       // Skip entries with empty/missing record_id — they are LLM hallucinations
+      // 中文：跳过record_id为空/缺失的条目——它们是LLM的幻觉
       if (!recordId) {
         logger?.debug?.(`${TAG} Skipping decision with empty record_id`);
         continue;
@@ -367,6 +409,7 @@ function parseBatchResult(
     }
 
     // Ensure all memories have a decision (fill missing with "store")
+    // 中文：确保所有记忆都有一个决策（用"store"填充缺失的）
     const decidedIds = new Set(decisions.map((d) => d.record_id));
     for (const mem of memories) {
       if (!decidedIds.has(mem.record_id)) {
@@ -388,6 +431,7 @@ function parseBatchResult(
 
 /**
  * Fallback: store all memories when parsing fails.
+ * 中文：解析失败时：在解析失败时存储所有记忆
  */
 function fallbackStoreAll(memories: Array<ExtractedMemory & { record_id: string }>): DedupDecision[] {
   return memories.map((m) => ({

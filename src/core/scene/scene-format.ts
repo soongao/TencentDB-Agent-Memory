@@ -1,5 +1,6 @@
 /**
  * Scene Block file format: parse and format the META-delimited Markdown files.
+ * 中文：场景块文件格式: 解析和格式化META分隔的Markdown文件。
  */
 
 export interface SceneBlockMeta {
@@ -20,6 +21,7 @@ const META_END = "-----META-END-----";
 
 /**
  * Parse a Scene Block file into structured data.
+ * 中文：解析一个场景块文件为结构化数据。
  */
 export function parseSceneBlock(raw: string, filename: string): SceneBlock {
   const startIdx = raw.indexOf(META_START);
@@ -27,6 +29,7 @@ export function parseSceneBlock(raw: string, filename: string): SceneBlock {
 
   if (startIdx === -1 || endIdx === -1) {
     // No META section — treat entire file as content
+    // 中文：无META部分——将整个文件视为内容
     return {
       filename,
       meta: { created: "", updated: "", summary: "", heat: 0 },
@@ -49,6 +52,7 @@ export function parseSceneBlock(raw: string, filename: string): SceneBlock {
 
 /**
  * Format a Scene Block back into file content.
+ * 中文：将场景块重新格式化为文件内容。
  */
 export function formatSceneBlock(meta: SceneBlockMeta, content: string): string {
   return `${formatMeta(meta)}\n\n${content}`;
@@ -56,6 +60,7 @@ export function formatSceneBlock(meta: SceneBlockMeta, content: string): string 
 
 /**
  * Format the META section.
+ * 中文：格式化META部分。
  */
 export function formatMeta(meta: SceneBlockMeta): string {
   return [

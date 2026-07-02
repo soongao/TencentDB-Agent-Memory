@@ -2,6 +2,8 @@
  * L2 MMD Generation Prompt — migrated from context-offload-server.
  *
  * Generates/updates Mermaid flowchart diagrams from offload entries.
+ * 中文：L2 MMD生成提示——迁移自context-offload-server。
+ * 从卸载条目生成/更新Mermaid流程图.
  */
 
 // ─── System Prompt ───────────────────────────────────────────────────────────
@@ -63,10 +65,13 @@ export interface L2NewEntry {
 }
 
 // ─── User Prompt Builder ─────────────────────────────────────────────────────
+// 中文：─── 用户提示构建器 ─────────────────────────────────────────────────────
 
 /**
  * Build the L2 user prompt for MMD generation.
  * Mirrors context-offload-server/internal/service/prompt/BuildL2UserPrompt.
+ * 中文：构建L2用户提示以进行MMD生成。
+ * 镜像context-offload-server/internal/service/prompt/BuildL2UserPrompt。
  */
 export function buildL2UserPrompt(opts: {
   existingMmd: string | null;
@@ -81,6 +86,7 @@ export function buildL2UserPrompt(opts: {
   const parts: string[] = [];
 
   // History section
+  // 中文：历史部分
   if (recentHistory) {
     parts.push(`## 近期对话历史：\n${recentHistory}`);
   } else {
@@ -96,6 +102,7 @@ export function buildL2UserPrompt(opts: {
   parts.push(`\n## Current task label: ${taskLabel}`);
 
   // Char count warning
+  // 中文：字符计数警告
   if (charCount > 2500) {
     parts.push(`\n## Current MMD size: ${charCount} chars (budget: 4000 chars)`);
     parts.push("⚠ 接近上限，请积极合并节点、精简 summary，优先使用 replace 模式微调而非 write 全量重写。");
@@ -105,6 +112,7 @@ export function buildL2UserPrompt(opts: {
   }
 
   // Existing MMD with line numbers
+  // 中文：现有MMD带行号
   parts.push("\n## Existing Mermaid content:");
   if (existingMmd) {
     const lines = existingMmd.split("\n");
@@ -116,6 +124,7 @@ export function buildL2UserPrompt(opts: {
   }
 
   // New entries
+  // 中文：新条目
   parts.push("\n## New offload entries to incorporate:");
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];

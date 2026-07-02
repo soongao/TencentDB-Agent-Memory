@@ -103,6 +103,7 @@ slot = cfg.get('plugins', {}).get('slots', {}).get('contextEngine', '(未设置)
 print(f'  Context Engine Slot: {slot}')
 
 # Offload config
+# 中文：卸载配置
 offload = cfg.get('plugins', {}).get('entries', {}).get('$PLUGIN_ID', {}).get('config', {}).get('offload', {})
 enabled = offload.get('enabled', False)
 backend = offload.get('backendUrl', '(未设置)')

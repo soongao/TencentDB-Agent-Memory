@@ -50,6 +50,32 @@ Or scope to one case::
 
     python3 hermes-plugin/memory/memory_tencentdb/tests/test_gateway_shutdown_leak.py \\
         GatewayShutdownLeakTest.test_external_gateway_is_not_killed
+中文：A模式网关关闭合约的端到端测试。
+背景
+----------
+当``memory_tencentdb``提供者在hermes下运行且网关由hermes进程（模式A——监督程序作为父进程）启动时，``provider.shutdown()``过去会让网关子进程继续运行。
+由于supervisor以``start_new_session=True``的方式启动了网关，未关闭的网关会被重新分配给PID 1并作为一个孤儿进程存活下来。
+由此产生了两个具体的bug：
+1. hermes重启时孤儿网关进程会累积。
+2. 下一个hermes进程的``is_running()``健康检查会看到过期的网关是健康的，并且*重用它*，默默地忽略了用户在重启之间旋转的任何配置（例如通过``memory-tencentdb-ctl --hermes config llm``安装的新LLM API密钥）。
+修复：``provider.shutdown()``现在调用了``supervisor.shutdown()``。此测试模块锁定该合约。
+测试套件布局
+-----------------
+* :class:`GatewayShutdownLeakTest`
+针对一个假的Python HTTP网关的核心合约测试。快速（≤几秒），无需Node/pnpm/tsx依赖，适合CI环境。涵盖：
+- ``test_provider_shutdown_should_stop_supervisor_gateway``
+监督程序拥有的网关**必须**在provider.shutdown()时停止。
+- ``test_external_gateway_is_not_killed``
+如果提供者附加到一个已经运行的网关（``ensure_running``提前返回而不启动），关闭时**不应**终止它——我们只拥有我们启动的东西。
+- ``test_second_provider_does_not_reuse_stale_gateway``
+重现“过期LLM配置”用户报告：提供者A启动一个网关，关闭，提供者B启动；提供者B必须不默默地重用旧的网关。
+* :class:`RealGatewayShutdownTest`
+针对实际Node网关（``src/gateway/server.ts``）的集成测试。验证优雅关闭（SIGTERM驱动的``gateway.stop()``运行，SQLite WAL被检查点保存以防止``*-wal``/``*-shm``侧车泄漏）。默认情况下跳过，因为它需要一个工作的``pnpm``/``tsx``工具链且启动需约30秒；通过设置``TDAI_E2E_REAL_GATEWAY=1``可启用。
+直接运行：
+python3 hermes-plugin/memory/memory_tencentdb/tests/test_gateway_shutdown_leak.py
+或仅针对一个用例：
+python3 hermes-plugin/memory/memory_tencentdb/tests/test_gateway_shutdown_leak.py \\
+GatewayShutdownLeakTest.test_external_gateway_is_not_killed
 """
 
 from __future__ import annotations
@@ -70,8 +96,10 @@ from typing import Dict, List, Optional
 # ---------------------------------------------------------------------------
 # Path setup
 # ---------------------------------------------------------------------------
+# 中文：路径设置
 
 # tdai-memory-openclaw-plugin / hermes-plugin / memory / memory_tencentdb / tests / THIS FILE
+# 中文：tdai-memory-openclaw-plugin / hermes-plugin / memory / memory_tencentdb / tests / 此文件
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[4]
 _HERMES_PLUGIN_ROOT = _PROJECT_ROOT / "hermes-plugin"
 
@@ -83,6 +111,8 @@ def _ensure_importable() -> Optional[str]:
     otherwise None. Each test method checks the return value and skips if
     set, so the whole file still imports cleanly in environments without
     a hermes checkout.
+    中文：将插件+hermes-agent根目录注入到``sys.path``中。
+    如果无法定位hermes-agent，则返回一个信息性跳过原因，否则返回None。每个测试方法都会检查返回值并根据需要跳过测试，因此整个文件在没有hermes检出的环境中仍能干净地导入。
     """
     if str(_HERMES_PLUGIN_ROOT) not in sys.path:
         sys.path.insert(0, str(_HERMES_PLUGIN_ROOT))
@@ -105,9 +135,13 @@ def _ensure_importable() -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Fake Gateway (Python HTTP server) helpers
 # ---------------------------------------------------------------------------
+# 中文：模拟网关（Python HTTP 服务器）辅助函数
 
 def _pick_free_port() -> int:
-    """Ask the kernel for an ephemeral port."""
+    """Ask the kernel for an ephemeral port.
+
+    中文：向内核请求一个临时端口。
+    """
     import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
@@ -127,6 +161,11 @@ def _make_fake_gateway_script(tmpdir: pathlib.Path, pid_file: pathlib.Path) -> p
         instance answered.
       * SIGTERM handler: remove the pid file and exit cleanly — lets us
         distinguish "supervisor sent SIGTERM" from "orphaned, still up".
+    中文：编写一个小巧的Python HTTP服务器来冒充网关。
+    行为：
+    * 启动时将自身的PID写入``pid_file``，并将其每条请求记录到``<tmpdir>/gateway.trace``中以便测试可以断言哪个实例响应了哪个请求。
+    * 以网关的规范JSON形状提供``GET /health``服务。回显``MEMORY_TENCENTDB_LLM_API_KEY``环境变量至一个``fingerprint``字段，使“过期配置重用”测试能够看到是哪个实例响应了。
+    * SIGTERM处理程序：移除PID文件并干净退出——让我们能够区分“监督程序发送SIGTERM”与“孤儿进程仍处于运行状态”。
     """
     script = tmpdir / "fake_gateway.py"
     trace = tmpdir / "gateway.trace"
@@ -140,6 +179,7 @@ def _make_fake_gateway_script(tmpdir: pathlib.Path, pid_file: pathlib.Path) -> p
         PORT = int(os.environ["MEMORY_TENCENTDB_GATEWAY_PORT"])
 
         # Stamp startup so tests know this is the correct instance.
+        # 中文：标记启动时间，以便测试知道这是正确的实例。
         FINGERPRINT = hashlib.sha1(
             os.environ.get("MEMORY_TENCENTDB_LLM_API_KEY", "").encode()
         ).hexdigest()[:12]
@@ -195,7 +235,10 @@ def _make_fake_gateway_script(tmpdir: pathlib.Path, pid_file: pathlib.Path) -> p
 
 
 def _pid_alive(pid: int) -> bool:
-    """Return True if the OS says this pid is still a live process."""
+    """Return True if the OS says this pid is still a live process.
+
+    中文：如果操作系统说此PID仍然是一个活动的进程，则返回True。
+    """
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -206,7 +249,10 @@ def _pid_alive(pid: int) -> bool:
 
 
 def _wait_for_pid_file(pid_file: pathlib.Path, timeout: float = 5.0) -> int:
-    """Poll until the fake gateway writes its pid file; return the pid."""
+    """Poll until the fake gateway writes its pid file; return the pid.
+
+    中文：轮询直到假网关写入其PID文件；返回PID。
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if pid_file.exists():
@@ -218,7 +264,10 @@ def _wait_for_pid_file(pid_file: pathlib.Path, timeout: float = 5.0) -> int:
 
 
 def _wait_until_dead(pid: int, timeout: float = 5.0) -> bool:
-    """Poll up to ``timeout`` seconds for the pid to disappear."""
+    """Poll up to ``timeout`` seconds for the pid to disappear.
+
+    中文：在最多``timeout``秒内轮询以检查PID是否消失。
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if not _pid_alive(pid):
@@ -228,7 +277,10 @@ def _wait_until_dead(pid: int, timeout: float = 5.0) -> bool:
 
 
 def _kill_if_alive(pid: int) -> None:
-    """Best-effort SIGTERM→SIGKILL for cleanup paths."""
+    """Best-effort SIGTERM→SIGKILL for cleanup paths.
+
+    中文：尽力而为地从SIGTERM到SIGKILL进行清理路径。
+    """
     if not _pid_alive(pid):
         return
     try:
@@ -241,7 +293,10 @@ def _kill_if_alive(pid: int) -> None:
 
 
 def _set_env(overrides: Dict[str, Optional[str]]) -> Dict[str, Optional[str]]:
-    """Apply env overrides, returning a restore dict."""
+    """Apply env overrides, returning a restore dict.
+
+    中文：应用环境覆盖，返回一个恢复字典。
+    """
     prior: Dict[str, Optional[str]] = {k: os.environ.get(k) for k in overrides}
     for k, v in overrides.items():
         if v is None:
@@ -262,9 +317,13 @@ def _restore_env(prior: Dict[str, Optional[str]]) -> None:
 # ---------------------------------------------------------------------------
 # Core contract tests — against fake Python HTTP Gateway
 # ---------------------------------------------------------------------------
+# 中文：核心合约测试 — 针对假Python HTTP 网关
 
 class GatewayShutdownLeakTest(unittest.TestCase):
-    """Supervisor lifecycle contract (fast; no Node dependency)."""
+    """Supervisor lifecycle contract (fast; no Node dependency).
+
+    中文：监督程序生命周期合约（快速；无需Node依赖）。
+    """
 
     def setUp(self) -> None:
         skip = _ensure_importable()
@@ -288,6 +347,7 @@ class GatewayShutdownLeakTest(unittest.TestCase):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     # -- utilities ----------------------------------------------------------
+    # 中文：—— 工具函数 ----------------------------------------------------------
 
     def _fake_gateway_cmd(self) -> str:
         return f"{sys.executable} {self._fake_script}"
@@ -298,6 +358,9 @@ class GatewayShutdownLeakTest(unittest.TestCase):
         Simulates "Gateway already running when provider attaches" —
         e.g. started manually by the user or by a previous process that
         legitimately left it behind.
+        中文：启动一个假的网关*在外围*控制之外。
+        模拟“提供者连接时网关已运行”的情况——
+        例如，由用户手动启动或由之前合法遗留下来的先前进程启动。
         """
         env = os.environ.copy()
         env["MEMORY_TENCENTDB_GATEWAY_PORT"] = str(port)
@@ -311,6 +374,7 @@ class GatewayShutdownLeakTest(unittest.TestCase):
             start_new_session=True,
         )
         # wait for it to come up
+        # 中文：等待其启动
         pid = _wait_for_pid_file(self._pid_file, timeout=8.0)
         self.assertEqual(pid, proc.pid)
         self._rogue_pids.append(pid)
@@ -319,7 +383,10 @@ class GatewayShutdownLeakTest(unittest.TestCase):
     # -- tests --------------------------------------------------------------
 
     def test_provider_shutdown_should_stop_supervisor_gateway(self) -> None:
-        """A-mode contract: Gateway we started MUST die on shutdown()."""
+        """A-mode contract: Gateway we started MUST die on shutdown().
+
+        中文：A模式合约：我们启动的网关必须在shutdown()后死亡。
+        """
         from memory.memory_tencentdb import MemoryTencentdbProvider
 
         port = _pick_free_port()
@@ -354,6 +421,8 @@ class GatewayShutdownLeakTest(unittest.TestCase):
         without spawning and leaves ``_process = None``. In that case
         ``shutdown()`` must be a no-op for the Gateway — killing it would
         break anyone else already using it.
+        中文：对称合约：不要杀死我们没有启动的东西。
+        如果提供者连接时网关已经在配置端口上运行，则``supervisor.ensure_running()``不会启动并返回，留下``_process = None``。在这种情况下，``shutdown()``必须是一个空操作——杀死它会破坏其他已经合法使用它的任何人。
         """
         from memory.memory_tencentdb import MemoryTencentdbProvider
 
@@ -365,6 +434,7 @@ class GatewayShutdownLeakTest(unittest.TestCase):
             "MEMORY_TENCENTDB_GATEWAY_PORT": str(port),
             # Supply a CMD too — we want to prove the supervisor takes the
             # is_running() fast path and *doesn't* spawn a second copy.
+            # 中文：提供一个 CMD 参数 —— 我们希望证明 supervisor 在 is_running() 快速路径上运行并且 *不* 启动第二个副本。
             "MEMORY_TENCENTDB_GATEWAY_CMD": self._fake_gateway_cmd(),
         })
         try:
@@ -372,6 +442,7 @@ class GatewayShutdownLeakTest(unittest.TestCase):
             provider.initialize(session_id="external-gw-session", user_id="tester")
 
             # Sanity: the external Gateway is still the pid-file holder.
+            # 中文：Sanity: 外部网关仍然是pid文件持有者。
             pid = int(self._pid_file.read_text().strip())
             self.assertEqual(
                 pid, external_pid,
@@ -383,6 +454,7 @@ class GatewayShutdownLeakTest(unittest.TestCase):
             provider.shutdown()
 
             # External gateway must survive.
+            # 中文：外部网关必须存活下来。
             time.sleep(0.5)
             self.assertTrue(
                 _pid_alive(external_pid),
@@ -402,6 +474,8 @@ class GatewayShutdownLeakTest(unittest.TestCase):
         not the first provider's leftover. The fake Gateway publishes
         ``fingerprint = sha1(api_key)[:12]`` over ``/health`` so we can
         tell the two apart by a single HTTP call.
+        中文：遗留配置重现。
+        模拟用户报告：在两次hermes运行之间轮换``MEMORY_TENCENTDB_LLM_API_KEY``。第二次提供者最终应该得到一个环境中有*新*密钥的网关——即，一个全新的进程，而不是第一次提供者的遗留物。假网关通过``/health``发布``fingerprint = sha1(api_key)[:12]``以便我们可以通过一次HTTP调用区分两者。
         """
         from memory.memory_tencentdb import MemoryTencentdbProvider
         from memory.memory_tencentdb.client import MemoryTencentdbSdkClient
@@ -422,6 +496,7 @@ class GatewayShutdownLeakTest(unittest.TestCase):
         })
         try:
             # --- first provider run (the "before rotation" hermes) ---
+            # 中文：--- 第一次 provider 运行（“轮换前”的 hermes）---
             provider_a = MemoryTencentdbProvider()
             provider_a.initialize(session_id="sess-a", user_id="tester")
             pid_a = _wait_for_pid_file(self._pid_file, timeout=8.0)
@@ -436,9 +511,11 @@ class GatewayShutdownLeakTest(unittest.TestCase):
             )
 
             # --- user rotates the LLM key between hermes restarts ---
+            # 中文：第一次提供方运行（"旋转前"的hermes）
             os.environ["MEMORY_TENCENTDB_LLM_API_KEY"] = "new-key-ZZZ"
 
             # --- second provider run (the "after rotation" hermes) ---
+            # 中文：--- 第二次 provider 运行（“轮换后”的 hermes）---
             provider_b = MemoryTencentdbProvider()
             provider_b.initialize(session_id="sess-b", user_id="tester")
             pid_b = _wait_for_pid_file(self._pid_file, timeout=8.0)
@@ -466,6 +543,7 @@ class GatewayShutdownLeakTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Integration test — against the real Node Gateway (opt-in)
 # ---------------------------------------------------------------------------
+# 中文：用户在hermes重启之间旋转LLM密钥
 
 class RealGatewayShutdownTest(unittest.TestCase):
     """Opt-in integration test for graceful shutdown of the real Gateway.
@@ -481,6 +559,15 @@ class RealGatewayShutdownTest(unittest.TestCase):
          Proxy signal: SQLite files are in a clean state (no leftover
          ``*-wal`` with unflushed bytes).
       2. The process exits within a reasonable grace window.
+    中文：可选集成测试，验证优雅关闭真实网关。
+    仅当设置了``TDAI_E2E_REAL_GATEWAY=1``时启用，因为这：
+    * 依赖于PATH上的``pnpm`` / ``tsx`存在,
+    * 成本约为10-30秒（Node冷启动+首次/health），
+    * 写入临时SQLite数据目录。
+    验证两个超出“进程退出”的属性：
+    1. 实际上运行了``gateway.stop()``——SIGTERM被发送并且在``process.exit(0)``之前，内核关闭处理程序完成。
+    信号代理：SQLite文件处于干净状态（没有未刷新的``*-wal``残留）。
+    2. 进程在合理的优雅窗口内退出。
     """
 
     def setUp(self) -> None:
@@ -522,6 +609,9 @@ class RealGatewayShutdownTest(unittest.TestCase):
             # into the child env, but ``src/gateway/config.ts`` currently
             # reads ``TDAI_GATEWAY_{HOST,PORT}``. Export both so this test
             # is agnostic to that mismatch (which is tracked separately).
+            # 中文：supervisor 会把 MEMORY_TENCENTDB_GATEWAY_{HOST,PORT} 导出到子进程环境中，
+            # 但 ``src/gateway/config.ts`` 目前读取的是 ``TDAI_GATEWAY_{HOST,PORT}``。
+            # 两组变量都导出，让这个测试不依赖该命名差异（该问题单独跟踪）。
             "TDAI_GATEWAY_HOST": "127.0.0.1",
             "TDAI_GATEWAY_PORT": str(port),
             "TDAI_DATA_DIR": str(self._data_dir),
@@ -529,6 +619,7 @@ class RealGatewayShutdownTest(unittest.TestCase):
             # unset keys make the L1 extractor log loud errors. A fake
             # key keeps the log clean and has no effect on the shutdown
             # path we're actually testing.
+            # 中文：第二次提供方运行（"旋转后"的hermes）
             "TDAI_LLM_API_KEY": "sk-test-placeholder-not-used",
             "MEMORY_TENCENTDB_LLM_API_KEY": "sk-test-placeholder-not-used",
         })
@@ -540,7 +631,9 @@ class RealGatewayShutdownTest(unittest.TestCase):
             # a failed startup would mask the shutdown assertions below and
             # let a regression slip through. Surface the stderr log tail
             # (same location the supervisor uses) to make diagnosis easy.
+            # 中文：如果网关实际上没有启动，则必须明确失败——否则，启动失败会掩盖下面的关闭断言，并导致回归问题被遗漏。显示stderr日志尾部（与supervisor使用的相同位置），以便于诊断。
             if not provider._gateway_available:  # noqa: SLF001 (test access)
+            # 中文："noqa: SLF001 (test access)"
                 log_path = pathlib.Path(
                     os.environ.get("HOME", "") or "/",
                     ".hermes", "logs", "memory_tencentdb", "gateway.stderr.log",
@@ -556,9 +649,12 @@ class RealGatewayShutdownTest(unittest.TestCase):
 
             # The supervisor stores the Popen object; reach in (test-only)
             # to grab the pid so we can watch it across shutdown.
+            # 中文：supervisor存储Popen对象；在此进行测试访问以获取pid，以便我们在关闭时对其进行监控。
             supervisor = provider._supervisor  # noqa: SLF001 (test access)
+            # 中文："noqa: SLF001 (test access)"
             self.assertIsNotNone(supervisor, "supervisor must be set after initialize()")
             proc = supervisor._process  # noqa: SLF001
+            # 中文："noqa: SLF001"
             self.assertIsNotNone(
                 proc,
                 "real Node Gateway was expected to be spawned by the supervisor; "
@@ -577,6 +673,7 @@ class RealGatewayShutdownTest(unittest.TestCase):
             )
             # Graceful stop should typically finish well under the 10s
             # supervisor timeout; flag long waits so regressions are loud.
+            # 中文：优雅停止通常应在supervisor超时（10秒）内完成；标记长时间等待以使回归问题明显。
             self.assertLess(
                 elapsed, 10.0,
                 f"provider.shutdown() took {elapsed:.1f}s — suspiciously "
@@ -587,6 +684,7 @@ class RealGatewayShutdownTest(unittest.TestCase):
             # Graceful-exit witness: no stray SQLite WAL/SHM should remain
             # under the data dir. If the Gateway was SIGKILL'd mid-write,
             # these sidecars would be left behind with uncommitted bytes.
+            # 中文：优雅退出见证：在数据目录下不应有遗留的SQLite WAL/SHM。如果Gateway在写入过程中被SIGKILL中断，这些辅助文件将留下未提交的数据。
             leftovers = sorted(
                 p for p in self._data_dir.rglob("*")
                 if p.suffix in (".db-wal", ".db-shm")
@@ -623,6 +721,17 @@ class RealGatewayShutdownTest(unittest.TestCase):
         degraded mode and L0 goes through JSONL only. The test adapts:
         it always checks JSONL; WAL assertions only fire when ``.db``
         files actually exist.
+        中文：通过capture()写入数据，然后SIGTERM——验证优雅关闭。
+        端到端证明当监督程序发送SIGTERM时，实际上运行了``gateway.stop()``（而不仅仅是“pid消失”）：
+        1. 启动一个指向临时数据目录的真实Node网关的全新实例。
+        2. 发送多个``/capture``调用来生成L0数据。
+        3. 确认数据实际上被写入磁盘（JSONL和/.db）。
+        4. ``provider.shutdown()`` → SIGTERM → ``gateway.stop()`` → ``core.destroy()`` → ``vectorStore.close()``（这会运行一个隐式的``PRAGMA wal_checkpoint``）。
+        5. 断言进程退出**干净地**（通过SIGTERM处理程序以退出码0，而不是由SIGKILL的137退出）。
+        6. 断言关闭在10秒SIGKILL回退窗口内完成得很好。
+        7. 如果存在任何``.db``文件，则断言没有脏的WAL / SHM残留。
+        8. 确认JSONL数据文件完好无损（非空，有效JSON行）——证明L0写入完全刷新了。
+        注意：当``sqlite-vec``不可用时，VectorStore进入降级模式且L0仅通过JSONL处理。测试会适应这一点：它总是检查JSONL；WAL断言只有在实际存在``.db``文件时才会触发。
         """
         from memory.memory_tencentdb import MemoryTencentdbProvider
         from memory.memory_tencentdb.client import MemoryTencentdbSdkClient
@@ -648,6 +757,7 @@ class RealGatewayShutdownTest(unittest.TestCase):
             provider.initialize(session_id="wal-ckpt-sess", user_id="wal-tester")
 
             if not provider._gateway_available:  # noqa: SLF001
+            # 中文："noqa: SLF001"
                 log_path = pathlib.Path(
                     os.environ.get("HOME", "") or "/",
                     ".hermes", "logs", "memory_tencentdb", "gateway.stderr.log",
@@ -662,11 +772,14 @@ class RealGatewayShutdownTest(unittest.TestCase):
                 )
 
             supervisor = provider._supervisor  # noqa: SLF001
+            # 中文："noqa: SLF001"
             proc = supervisor._process  # noqa: SLF001
+            # 中文："noqa: SLF001"
             self.assertIsNotNone(proc, "Gateway process must be spawned")
             pid = proc.pid
 
             # ---- Step 2: write data via /capture ----
+            # 中文：---- 第2步：通过/capture写入数据 ----
             client = MemoryTencentdbSdkClient(
                 base_url=f"http://127.0.0.1:{port}", timeout=10,
             )
@@ -682,13 +795,17 @@ class RealGatewayShutdownTest(unittest.TestCase):
                 except Exception:
                     # capture() may partially fail (e.g. LLM extraction) but
                     # L0 write still happens before extraction kicks in.
+                    # 中文：capture()可能会部分失败（例如LLM提取），但在提取开始之前L0写入仍然会发生。
                     pass
 
             # Give the Gateway a moment to flush writes.
+            # 中文：给网关一些时间来刷新写入操作。
             time.sleep(0.5)
 
             # ---- Step 3: confirm data was written to disk ----
             # JSONL (always present, even when VectorStore is degraded):
+            # 中文：---- 第3步：确认数据已写入磁盘 ----
+            # JSONL（始终存在，即使VectorStore降级也是如此）：
             jsonl_files = sorted(self._data_dir.rglob("*.jsonl"))
             self.assertTrue(
                 len(jsonl_files) > 0,
@@ -700,6 +817,7 @@ class RealGatewayShutdownTest(unittest.TestCase):
                 lines = [l for l in jf.read_text().splitlines() if l.strip()]
                 total_lines_before += len(lines)
                 # Validate each line is parseable JSON.
+                # 中文：逐行验证是否可解析为JSON。
                 for idx, line in enumerate(lines):
                     try:
                         _json.loads(line)
@@ -713,12 +831,15 @@ class RealGatewayShutdownTest(unittest.TestCase):
             )
 
             # .db files (only present when sqlite-vec loaded successfully):
+            # 中文：.db文件（仅在sqlite-vec加载成功时存在）：
             db_files = sorted(self._data_dir.rglob("*.db"))
             has_sqlite = len(db_files) > 0
 
             # ---- Step 4: SIGTERM via provider.shutdown() ----
             # Grab a reference to the Popen *before* supervisor.shutdown()
             # sets it to None, so we can check returncode afterwards.
+            # 中文：---- 第4步：通过provider.shutdown()发送SIGTERM信号----
+            # 在supervisor.shutdown()设置它为None之前，获取Popen的引用，以便之后检查returncode。
             popen_ref = proc
 
             t0 = time.monotonic()
@@ -726,6 +847,7 @@ class RealGatewayShutdownTest(unittest.TestCase):
             elapsed = time.monotonic() - t0
 
             # ---- Step 5: verify clean exit (SIGTERM handler ran) ----
+            # 中文：---- 第5步：验证干净退出（SIGTERM处理程序运行）----
             self.assertTrue(
                 _wait_until_dead(pid, timeout=12.0),
                 f"real Node Gateway pid={pid} did not exit within 12s.",
@@ -740,6 +862,11 @@ class RealGatewayShutdownTest(unittest.TestCase):
             #   -9       → SIGKILL (supervisor had to force-kill after 10s
             #               timeout — that's a regression)
             #   positive → unexpected crash exit code
+            # 中文：返回码语义：
+            # 0        → 节点SIGTERM处理程序运行并调用了process.exit(0)
+            # -15      → SIGTERM直接杀死了进程（对于多层启动器如`pnpm exec tsx`来说是正常的：supervisor的terminate()击中了pnpm，后者在接收到信号后退出；tsx/node子进程则作为级联退出）
+            # -9       → SIGKILL（supervisor在10秒超时后强制杀死了进程 —— 这是一个回退情况）
+            # 正数     → 未预期的崩溃退出代码
             rc = popen_ref.returncode
             self.assertIsNotNone(rc, "process should have exited")
             self.assertNotEqual(
@@ -751,13 +878,16 @@ class RealGatewayShutdownTest(unittest.TestCase):
             # For direct-node launches rc==0 means the handler ran. For
             # pnpm-wrapped launches rc==-15 is expected (pnpm doesn't trap
             # SIGTERM). Both are acceptable; anything else is suspicious.
+            # 中文：对于直接节点启动，rc==0意味着处理程序运行。对于pnpm包装启动，rc==-15是预期的（pnpm不会捕获SIGTERM）。两者都是可接受的；任何其他情况都值得怀疑。
             self.assertIn(
                 rc, (0, -15, -2),  # 0=handler, -15=SIGTERM, -2=SIGINT
+                # 中文：0=handler, -15=SIGTERM, -2=SIGINT
                 f"Gateway exited with unexpected code {rc}. Expected 0 "
                 "(graceful handler) or -15 (signal). Investigate.",
             )
 
             # ---- Step 6: timing ----
+            # 中文：---- 第6步：时间间隔----
             self.assertLess(
                 elapsed, 10.0,
                 f"provider.shutdown() took {elapsed:.1f}s — close to the "
@@ -765,6 +895,7 @@ class RealGatewayShutdownTest(unittest.TestCase):
             )
 
             # ---- Step 7: WAL/SHM cleanliness (only when .db exists) ----
+            # 中文：---- 第7步：WAL/SHM清洁度（仅当.db存在时）----
             if has_sqlite:
                 shm_leftovers = sorted(self._data_dir.rglob("*.db-shm"))
                 self.assertEqual(
@@ -787,6 +918,8 @@ class RealGatewayShutdownTest(unittest.TestCase):
             # ---- Step 8: JSONL integrity post-shutdown ----
             # The same JSONL files should still be intact and no smaller
             # (gateway.stop → core.destroy should not truncate them).
+            # 中文：---- 步骤 8：关闭后 JSONL 完整性检查 ----
+            # 相同的 JSONL 文件仍然应该保持完整且不应变小（gateway.stop → core.destroy 不应截断它们）。
             total_lines_after = 0
             for jf in jsonl_files:
                 if jf.exists():

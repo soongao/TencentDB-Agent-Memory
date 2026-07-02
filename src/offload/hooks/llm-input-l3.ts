@@ -2,6 +2,8 @@
  * llm_input L3 handler.
  * Calculates precise input tokens via tiktoken and executes L3 compression
  * (mild score-cascade replacement + aggressive oldest-prefix deletion).
+ * 中文：llm_input L3 处理器。
+ * 通过 tiktoken 计算精确的输入标记数并执行 L3 压缩（轻度评分级联替换 + 极力 oldest-prefix 删除）。
  */
 import { PLUGIN_DEFAULTS, type OffloadEntry, type PluginConfig, type PluginLogger } from "../types.js";
 import { readOffloadEntries, readMmd, listMmds, markOffloadStatus } from "../storage.js";
@@ -30,6 +32,7 @@ import type { BackendClient } from "../backend-client.js";
 import { buildL3TriggerReport, reportL3Trigger } from "../state-reporter.js";
 
 // ─── Heartbeat message filtering ─────────────────────────────────────────────
+// 中文：─── 心跳消息过滤 ─────────────────────────────────────────────
 
 function isHeartbeatToolUseBlock(block: any): boolean {
   if (block.type !== "tool_use" && block.type !== "toolCall") return false;
@@ -96,6 +99,7 @@ export function filterHeartbeatMessages(messages: any[], logger: PluginLogger | 
 }
 
 // ─── Token overflow error detection ──────────────────────────────────────────
+// 中文：─── 标记溢出错误检测 ──────────────────────────────────────────
 
 export function isTokenOverflowError(err: any): boolean {
   const msg = String(err?.message ?? err ?? "").toLowerCase();
@@ -109,6 +113,7 @@ export function isTokenOverflowError(err: any): boolean {
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
+// 中文：─── 常量 ───────────────────────────────────────────────────────────────
 
 export const MILD_CASCADE_MIN_COUNT = 10;
 export const MILD_CASCADE_INITIAL_SCORE = 7;
@@ -118,9 +123,12 @@ export const EMERGENCY_MIN_MESSAGES_TO_KEEP = 2;
 
 // Maximum content length (chars) to keep when truncating an oversized message in-place.
 // ~2K chars ≈ ~500 tokens — enough to preserve tool_call_id and a snippet of context.
+// 中文：截断过大消息时就地保留的最大内容长度（字符数）。
+// 约 2K 字符 ≈ 约 500 个标记 — 足够保留 tool_call_id 和一段上下文。
 const EMERGENCY_TRUNCATE_MAX_CHARS = 2000;
 
 // ─── Message dump helper ─────────────────────────────────────────────────────
+// 中文：─── 消息转储辅助 ─────────────────────────────────────────────────────
 
 export function dumpMessagesSnapshot(label: string, messages: any[], logger: PluginLogger): void {
   const summary: string[] = [];
@@ -158,6 +166,7 @@ export function dumpMessagesSnapshot(label: string, messages: any[], logger: Plu
 }
 
 // ─── Create llm_input L3 Handler ─────────────────────────────────────────────
+// 中文：─── 创建 llm_input L3 处理器 ─────────────────────────────────────────────
 
 export function createLlmInputL3Handler(
   stateManager: OffloadStateManager,
@@ -170,6 +179,7 @@ export function createLlmInputL3Handler(
   return async (event: any) => {
     const _l3Start = Date.now();
     // Skip internal memory-pipeline sessions
+    // 中文：跳过内部内存管道会话
     const _sk = stateManager.getLastSessionKey();
     if (typeof _sk === "string" && /memory-.*-session-\d+/.test(_sk)) return;
 
@@ -192,13 +202,16 @@ export function createLlmInputL3Handler(
       }
 
       // Defensive fast-path re-apply
+      // 中文：防御性快速路径重试
       if (historyMessages.length > 0) await fastPathReApply(historyMessages, stateManager, logger);
 
       // MMD injection into historyMessages
+      // 中文：MMD注入到historyMessages中
       if (historyMessages.length > 0) {
         try {
           await injectMmdIntoMessages(historyMessages, stateManager, logger, getContextWindow, pluginConfig);
         } catch { /* ignore */ }
+        // 中文：ignore
       }
 
       const snap = buildTiktokenContextSnapshot("llm_input_l3", historyMessages, sysPrompt, promptText);
@@ -240,6 +253,7 @@ export function createLlmInputL3Handler(
       let workingTokens = snap.totalTokens;
 
       // Aggressive
+      // 中文：激进型
       if (workingTokens >= aggressiveThreshold) {
         logger.debug?.(`[context-offload] L3(llm_input) AGGRESSIVE: tokens≈${workingTokens} >= ${aggressiveThreshold}, starting deletion`);
         const _llmAggStart = Date.now();
@@ -277,6 +291,7 @@ export function createLlmInputL3Handler(
           }
         }
         // If aggressive stalled due to user message protection, force emergency
+        // 中文：如果激进型因用户消息保护而停滞，则强制紧急处理
         if (result.stalledByUserMsg && workingTokens >= aggressiveThreshold) {
           logger.warn(`[context-offload] L3(llm_input) AGGRESSIVE stalled, forcing emergency fallback`);
           stateManager._forceEmergencyNext = true;
@@ -303,6 +318,7 @@ export function createLlmInputL3Handler(
       }
 
       // Emergency
+      // 中文：紧急处理
       const emergencyRatio = pluginConfig?.emergencyCompressRatio ?? PLUGIN_DEFAULTS.emergencyCompressRatio;
       const emergencyTargetRatio = pluginConfig?.emergencyTargetRatio ?? PLUGIN_DEFAULTS.emergencyTargetRatio;
       const emergencyThreshold = Math.floor(contextWindow * emergencyRatio);
@@ -333,6 +349,7 @@ export function createLlmInputL3Handler(
       if (stateManager.isLoaded()) await stateManager.save();
 
       // Final L3 summary
+      // 中文：最终L3总结
       const finalSnap = buildTiktokenContextSnapshot("llm_input_l3_final", historyMessages, sysPrompt, promptText);
       const totalSaved = snap.totalTokens - finalSnap.totalTokens;
       if (totalSaved > 0) {
@@ -362,6 +379,7 @@ export function createLlmInputL3Handler(
       });
 
       // Upload plugin state + L3 token accounting to backend /store.
+      // 中文：上传插件状态+L3令牌计费至后端/store.
       try {
         const triggerReason = snap.totalTokens >= aggressiveThreshold
           ? "above_aggressive"
@@ -398,6 +416,7 @@ export function createLlmInputL3Handler(
 }
 
 // ─── Compression Algorithms ──────────────────────────────────────────────────
+// 中文：──────── 压缩算法 ───────────────────────────────────────────────────────
 
 export function compressByScoreCascade(
   messages: any[],
@@ -452,6 +471,7 @@ export function compressByScoreCascade(
   candidates.sort((a: any, b: any) => b.score - a.score);
 
   // Score distribution: count candidates at each score level
+  // 中文：评分分布: 统计每个分数等级的候选者数量
   const scoreDist = new Map<number, number>();
   for (const c of candidates) {
     const s = c.score;
@@ -533,6 +553,10 @@ export function compressByScoreCascade(
           // but we mark it as _offloaded anyway to avoid re-processing.
           // The net effect is minimal since the size barely increased.
           // In practice we simply skip counting it as a useful replacement.
+          // 中文：还原: 消息已经被replaceWithSummary修改过了,
+          // 但我们还是将其标记为_offloaded以避免重新处理。
+          // 总体影响很小，因为大小几乎没有增加。
+          // 实际上我们只是跳过计算它作为一个有用的替换。
           msg._offloaded = true;
           continue;
         }
@@ -576,6 +600,7 @@ export function compressByScoreCascade(
 }
 
 // ─── User Message Protection ─────────────────────────────────────────────────
+// 中文：─── 用户消息保护 ─────────────────────────────────────────────────
 
 /**
  * Find the index of the LAST real user message (not MMD/injection) in the
@@ -584,6 +609,8 @@ export function compressByScoreCascade(
  * Both aggressive and emergency compression delete from the HEAD of the array
  * (oldest → newest).  By capping deleteCount so it never reaches or exceeds
  * this index, the user's most recent prompt is preserved.
+ * 中文：在messages数组中找到最后一个真实的用户消息（不是MMD/注入）的索引。如果没有找到返回-1。
+ * 激进压缩和紧急压缩都从数组头部删除（最旧→最新）。通过限制deleteCount使其永远不会达到或超过此索引，可以保留用户的最近提示。
  */
 function findLastUserMessageIndex(messages: any[]): number {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -607,17 +634,23 @@ function findLastUserMessageIndex(messages: any[]): number {
  * user message, at the head), there's nothing deletable before it so we
  * return 0.  The caller (aggressive/emergency) should detect this and
  * fall through to emergency which can handle this scenario differently.
+ * 中文：将头部删除计数限制为不删除最后一个真实的用户消息（最新的用户输入）。头部区域的较早用户消息允许被删除——只有最终的用户消息是神圣不可侵犯的。
+ * 如果最后一个用户消息位于或处于`deleteCount`之前，则缩小deleteCount以停止在它之前。
  */
 function capDeleteCountForUserMessage(messages: any[], deleteCount: number): number {
   if (deleteCount <= 0) return 0;
   const lastUserIdx = findLastUserMessageIndex(messages);
   if (lastUserIdx < 0) return deleteCount;           // no user msg → nothing to protect
+  // 中文：no user msg → nothing to protect
   if (deleteCount <= lastUserIdx) return deleteCount; // last user msg is safe beyond the cut
+  // 中文：last user msg is safe beyond the cut
   // Shrink to just before the LAST user message (older user msgs can be deleted)
+  // 中文：收缩到在最后一个用户消息之前（较旧的用户消息可以被删除）
   return lastUserIdx;
 }
 
 // ─── Aggressive Compression ──────────────────────────────────────────────────
+// 中文：─── 激进压缩 ──────────────────────────────────────────────────
 
 /**
  * Compute how many messages to delete from the head to bring total tokens
@@ -629,11 +662,14 @@ function capDeleteCountForUserMessage(messages: any[], deleteCount: number): num
  * @param aggressiveThreshold - target total tokens to reach
  * @param countTokens - tiktoken counter
  * @param maxDeletable - max messages allowed to delete (preserves MIN_KEEP)
+ * 中文：计算需要从头部删除多少条消息才能使总令牌数低于阈值。一次性操作：从头部逐条累加每个消息的令牌成本，直到移除足够多的令牌。
  */
 function computeAggressiveDeleteCount(messages: any[], remainingTokens: number, aggressiveThreshold: number, countTokens: (t: string) => number, maxDeletable: number): number {
   if (messages.length === 0 || maxDeletable <= 0) return 0;
   if (remainingTokens <= aggressiveThreshold) return 0; // already below target
+  // 中文：already below target
   // Need to remove (remainingTokens - aggressiveThreshold) tokens from messages
+  // 中文：需要移除 (remainingTokens - aggressiveThreshold) 个令牌从消息中
   const tokensToDelete = remainingTokens - aggressiveThreshold;
   const perMsg = messages.map((m: any) => countTokens(JSON.stringify(m)));
   let acc = 0;
@@ -645,6 +681,8 @@ function computeAggressiveDeleteCount(messages: any[], remainingTokens: number, 
   }
   // Minimum progress guarantee: if head messages are tiny (offloaded summaries)
   // and we couldn't reach tokensToDelete, ensure at least 20% of messages are deleted.
+  // 中文：最小进度保证：如果头部消息很小（卸载的摘要），
+  // 并且我们无法达到 tokensToDelete，则至少确保删除消息的20%。
   if (acc < tokensToDelete && deleteCount > 0) {
     const minByCount = Math.max(1, Math.ceil(messages.length * 0.2));
     deleteCount = Math.max(deleteCount, Math.min(minByCount, maxDeletable));
@@ -663,6 +701,8 @@ function adjustDeleteCountForToolPairing(messages: any[], initialDeleteCount: nu
  * One-shot aggressive compression.  Computes the exact cut point to bring
  * tokens below threshold in a single pass, then splices once.
  * No multi-round while loop — O(N) tiktoken + O(1) splice.
+ * 中文：一次性激进压缩。计算确切的切分点以在单次通过中将令牌数降至阈值以下，然后进行一次拼接。
+ * 没有多轮循环 — O(N) tiktoken + O(1) 拼接。
  */
 export async function aggressiveCompressUntilBelowThreshold(
   messages: any[],
@@ -687,6 +727,7 @@ export async function aggressiveCompressUntilBelowThreshold(
   }
 
   // ── Extract MMD messages before computing delete count ──
+  // 中文：── 提取 MMD 消息再计算删除数量 ──
   const mmdMsgs: { msg: any }[] = [];
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i]._mmdContextMessage || messages[i]._mmdInjection) {
@@ -695,6 +736,7 @@ export async function aggressiveCompressUntilBelowThreshold(
   }
 
   // ── One-shot: compute exactly how many to delete to reach threshold ──
+  // 中文：── 一次性：精确计算需要删除多少以达到阈值 ──
   const maxDeletable = Math.max(0, messages.length - AGGRESSIVE_MIN_MESSAGES_TO_KEEP);
   let deleteCount = computeAggressiveDeleteCount(messages, remainingTokens, aggressiveThreshold, countTokens, maxDeletable);
   deleteCount = adjustDeleteCountForToolPairing(messages, deleteCount);
@@ -708,6 +750,7 @@ export async function aggressiveCompressUntilBelowThreshold(
     stalledByUserMsg = true;
     logger.warn(`[context-offload] L3-aggressive STALLED: deleteCount=0 (user msg at head?), remaining≈${remainingTokens}, msgs=${messages.length}`);
     // Restore MMD messages
+    // 中文：恢复 MMD 消息
     for (const { msg } of mmdMsgs) {
       if (msg._mmdContextMessage === "history" || msg._mmdInjection) {
         messages.splice(findHistoryMmdInsertionPoint(messages), 0, msg);
@@ -719,10 +762,12 @@ export async function aggressiveCompressUntilBelowThreshold(
   }
 
   // ── Calculate deleted token cost and splice ──
+  // 中文：── 计算已删除的令牌成本并拼接 ──
   const deletedTokens = tiktokenCount(JSON.stringify(messages.slice(0, deleteCount), jsonReplacer));
   const toDelete = messages.splice(0, deleteCount);
 
   // Collect tool call IDs
+  // 中文：收集工具调用 ID
   for (const msg of toDelete) {
     const toolCallId = extractToolCallId(msg) ?? extractToolUseIdFromAssistant(msg);
     if ((isToolResultMessage(msg) || isToolUseInAssistant(msg)) && toolCallId && allDeletedToolCallIds.length < 200) {
@@ -737,6 +782,7 @@ export async function aggressiveCompressUntilBelowThreshold(
   );
 
   // ── Restore MMD context messages ──
+  // 中文：── 恢复MMD上下文消息 ──
   for (const { msg } of mmdMsgs) {
     if (msg._mmdContextMessage === "history" || msg._mmdInjection) {
       const restoreIdx = findHistoryMmdInsertionPoint(messages);
@@ -751,6 +797,7 @@ export async function aggressiveCompressUntilBelowThreshold(
 }
 
 // ─── Emergency Compression ───────────────────────────────────────────────────
+// 中文：─── 紧急压缩 ───────────────────────────────────────────────────
 
 export function emergencyCompress(
   messages: any[],
@@ -771,6 +818,7 @@ export function emergencyCompress(
   let deletedCount = 0;
 
   // Single full snapshot at entry, then incremental subtraction in the loop
+  // 中文：入口处单次全量快照，然后循环中进行增量减法
   let currentTokens = buildTiktokenContextSnapshot("emergency_est", messages, sysPrompt, promptText).totalTokens;
 
   while (messages.length > EMERGENCY_MIN_MESSAGES_TO_KEEP) {
@@ -788,19 +836,23 @@ export function emergencyCompress(
       // Head-delete is blocked (user message at index 0).
       // Fallback: delete the LARGEST non-user messages from the tail to make progress.
       // This is the last resort — emergency MUST make progress.
+      // 中文：头部删除被阻止（索引0的消息为用户消息）。备选：从尾部删除最大的非用户消息以取得进展。这是最后手段——紧急情况必须取得进展。
       const tailDeleted = _emergencyTailDelete(messages, targetTokens, currentTokens, deletedToolCallIds, logger);
       deletedCount += tailDeleted.count;
       currentTokens -= tailDeleted.tokens;
       if (tailDeleted.count <= 0) {
         // Both head-delete and tail-delete are stuck.
         // Last-resort: truncate the LARGEST message content in-place.
+        // 中文：头部删除和尾部删除都受阻。最后手段：就地截断最大的消息内容。
         const truncResult = _emergencyTruncateOversized(messages, targetTokens, currentTokens, deletedToolCallIds, logger);
         currentTokens -= truncResult.tokensSaved;
         if (truncResult.tokensSaved <= 0) break; // truly nothing left to do
+        // 中文：truly nothing left to do
       }
       continue;
     }
     // Calculate deleted tokens before splicing (incremental subtraction)
+    // 中文：在拼接前计算已删除的令牌数（增量减法）
     const deletedTokens = tiktokenCount(JSON.stringify(messages.slice(0, deleteCount2), jsonReplacer));
     const toDelete = messages.splice(0, deleteCount2);
     currentTokens -= deletedTokens;
@@ -814,6 +866,7 @@ export function emergencyCompress(
   }
 
   // Restore MMD messages and compensate token count
+  // 中文：恢复MMD消息并补偿令牌计数
   for (const { msg } of mmdMsgs) {
     const mmdTokens = tiktokenCount(JSON.stringify(msg, jsonReplacer));
     if (msg._mmdContextMessage === "history" || msg._mmdInjection) {
@@ -822,6 +875,7 @@ export function emergencyCompress(
     } else {
       // Active MMD: use the same insertion logic as mmd-injector to avoid
       // breaking tool_call/tool_result pairing or user→assistant alternation.
+      // 中文：活跃MMD：使用mmd-injector相同的插入逻辑以避免破坏tool_call/tool_result配对或用户→助手交替。
       const insertIdx = findActiveMmdInsertionPoint(messages);
       messages.splice(insertIdx, 0, msg);
     }
@@ -844,6 +898,12 @@ export function emergencyCompress(
  *
  * Non-tool messages (plain assistant text, user messages other than the last)
  * are also candidates and treated as single-message groups.
+ * 中文：紧急尾删除：当头部删除因用户消息在索引0处被阻止时，删除可删除的最大**工具对组**（assistant[tool_use] + 所有其对应的toolResults）以避免孤立的tool_use/tool_result（Anthropic 400错误）。
+ * 策略：
+ * 1. 扫描消息构建“工具对组”——每个组是一个包含工具使用块的assistant消息及其所有对应的toolResult消息。
+ * 2. 按总token数为每个组评分。
+ * 3. 删除最大的组。重复直到低于目标。
+ * 非工具消息（纯assistant文本、除最后一条外的用户消息）也是候选者，并被视为单条消息组。
  */
 function _emergencyTailDelete(
   messages: any[],
@@ -859,13 +919,17 @@ function _emergencyTailDelete(
     const lastUserIdx = findLastUserMessageIndex(messages);
 
     // Build tool pair groups: map assistant(tool_use) index → set of related toolResult indices
+    // 中文：构建工具对组：将assistant(tool_use)索引映射到相关toolResult索引集合
     const groups: Array<{ indices: number[]; tokens: number; toolCallIds: string[] }> = [];
     const claimed = new Set<number>(); // indices already in a group
+    // 中文：indices already in a group
 
     // Pass 1: Find assistant(tool_use) messages and their paired toolResults
+    // 中文：第一遍：查找assistant(tool_use)消息及其配对的toolResults
     for (let i = 1; i < messages.length; i++) {
       if (claimed.has(i)) continue;
       if (i === lastUserIdx) continue; // protect last user
+      // 中文：protect last user
       const msg = messages[i];
       const tuIds = extractAllToolUseIds(msg);
       if (tuIds.length > 0 && isAssistantMessageWithToolUse(msg)) {
@@ -873,6 +937,7 @@ function _emergencyTailDelete(
         const groupToolCallIds = [...tuIds];
         claimed.add(i);
         // Find all paired toolResult messages for these tool_use IDs
+        // 中文：为这些tool_use ID找到所有配对的toolResult消息
         const tuIdSet = new Set(tuIds);
         for (let j = i + 1; j < messages.length; j++) {
           if (claimed.has(j)) continue;
@@ -888,6 +953,7 @@ function _emergencyTailDelete(
           }
         }
         // Calculate total tokens for the group
+        // 中文：计算该组的总token数
         let groupTokens = 0;
         for (const idx of groupIndices) {
           groupTokens += tiktokenCount(JSON.stringify(messages[idx], jsonReplacer));
@@ -897,10 +963,12 @@ function _emergencyTailDelete(
     }
 
     // Pass 2: Add orphaned toolResult messages (no paired assistant) as single-msg groups
+    // 中文：第二遍：将孤立的toolResult消息（无配对assistant）作为单条消息组添加
     for (let i = 1; i < messages.length; i++) {
       if (claimed.has(i)) continue;
       if (i === lastUserIdx) continue;
       if (messages.length - i <= 1) continue; // protect last message
+      // 中文：protect last message
       const msg = messages[i];
       if (isToolResultMessage(msg)) {
         const tid = extractToolCallId(msg);
@@ -911,6 +979,7 @@ function _emergencyTailDelete(
     }
 
     // Pass 3: Add plain assistant messages (no tool_use) as single-msg groups
+    // 中文：第三遍：将纯assistant消息（无tool_use）作为单条消息组添加
     for (let i = 1; i < messages.length; i++) {
       if (claimed.has(i)) continue;
       if (i === lastUserIdx) continue;
@@ -927,14 +996,17 @@ function _emergencyTailDelete(
     if (groups.length === 0) break;
 
     // Find the group with the most tokens
+    // 中文：找到token最多的组
     groups.sort((a, b) => b.tokens - a.tokens);
     const best = groups[0];
     if (best.tokens <= 0) break;
 
     // Would deleting this group leave fewer than MIN_KEEP messages?
+    // 中文：删除这个组是否会留下少于MIN_KEEP条消息？
     if (messages.length - best.indices.length < EMERGENCY_MIN_MESSAGES_TO_KEEP) break;
 
     // Delete the group (indices in reverse order to avoid index shift issues)
+    // 中文：删除组（按逆序索引以避免索引偏移问题）
     const sortedIndices = [...best.indices].sort((a, b) => b - a);
     for (const idx of sortedIndices) {
       messages.splice(idx, 1);
@@ -964,6 +1036,14 @@ function _emergencyTailDelete(
  *    (ignoring MIN_KEEP for this single critical operation).
  *
  * This ensures emergency ALWAYS makes progress regardless of MIN_KEEP constraints.
+ * 中文：紧急截断：当头部删除和尾部删除都被阻止时
+ * （例如，仅剩的MIN_KEEP条消息中有一条是142K个令牌），就地截断
+ * 最大的消息内容以打破死锁。
+ * 策略：
+ * 1. 通过令牌数找到最大的非用户消息。
+ * 2. 如果它是工具结果，则用截断后的占位符替换内容。
+ * 3. 如果截断失败或消息受保护，尝试完全删除它（忽略MIN_KEEP在此关键操作中的约束）。
+ * 这确保了紧急情况总是能够进展，不受MIN_KEEP的限制。
  */
 function _emergencyTruncateOversized(
   messages: any[],
@@ -978,6 +1058,7 @@ function _emergencyTruncateOversized(
 
   for (let i = 0; i < messages.length; i++) {
     if (i === lastUserIdx) continue; // protect last user message
+    // 中文：保护最后用户的消息
     const msg = messages[i];
     if (msg._mmdContextMessage || msg._mmdInjection) continue;
     const tokens = tiktokenCount(JSON.stringify(msg, jsonReplacer));
@@ -992,6 +1073,7 @@ function _emergencyTruncateOversized(
   // Skip if the largest message is already small enough — truncation would
   // make it LARGER (stub text overhead > original content). ~600 tokens is
   // the approximate size of the stub + preview.
+  // 中文：如果最大的消息已经足够小——截断会使它更大（占位符文本开销 > 原始内容）。大约600个令牌是占位符+预览的大致大小。
   if (bestTokens < 600) return { tokensSaved: 0 };
 
   const msg = messages[bestIdx];
@@ -1001,23 +1083,30 @@ function _emergencyTruncateOversized(
 
 
   // Try truncation first: replace content with a short stub
+  // 中文：首先尝试截断：用短占位符替换内容
   try {
     if (isAssistantTU) {
       // Assistant with tool_use: preserve tool_use block structure (id, name, type)
       // but replace input/arguments with a compact stub to maintain tool pairing.
+      // 中文：带有tool_use的助手：保留tool_use块结构（id, name, type），但用紧凑的占位符替换输入/参数以保持工具配对。
       _truncateAssistantToolUseContent(msg, bestTokens, logger);
     } else {
       // toolResult / plain assistant / other: safe to replace entire content
+      // 中文：toolResult / 原始助手 / 其他：可以安全地替换整个内容
       const stubText =
         `[Tool output truncated for context management. Original ~${bestTokens} tokens, role=${role}${toolCallId ? `, id=${toolCallId}` : ""}]`;
       _setMessageContent(msg, stubText);
       // Also strip any other large fields that may exist on the message
       // (OpenClaw tool results can have output/result/data fields outside content)
+      // 中文：还应移除消息上可能存在的其他大字段
+      // （OpenClaw工具结果可以在content之外有output/result/data字段）
       _stripLargeFields(msg);
     }
     // Invalidate WeakMap token cache so buildTiktokenContextSnapshot sees the new size
+    // 中文：清空WeakMap令牌缓存以使buildTiktokenContextSnapshot看到新的大小
     invalidateTokenCache(msg);
     // Also clean up any legacy per-message cache markers
+    // 中文：同时清理任何遗留的消息缓存标记
     if (msg._cachedTokens !== undefined) delete msg._cachedTokens;
     if (msg._tokenCount !== undefined) delete msg._tokenCount;
 
@@ -1035,6 +1124,7 @@ function _emergencyTruncateOversized(
     // Truncation failed — force-delete the message regardless of MIN_KEEP.
     // If it's an assistant with tool_use, also remove its paired toolResult
     // messages to avoid orphaned tool results (Anthropic 400 error).
+    // 中文：截断失败——无视MIN_KEEP强制删除消息，如果是带有tool_use的助手，则一并移除其配对的toolResult消息以避免孤立的工具结果（Anthropic 400错误）
     logger.warn(`[context-offload] EMERGENCY truncate failed (${truncErr}), force-deleting msg idx=${bestIdx}`);
     let totalSaved = bestTokens;
     const tuIds = isAssistantTU ? new Set(extractAllToolUseIds(msg)) : null;
@@ -1042,6 +1132,7 @@ function _emergencyTruncateOversized(
     if (toolCallId) deletedToolCallIds.push(toolCallId);
 
     // Clean up orphaned toolResult messages for the deleted tool_use IDs
+    // 中文：清理已删除tool_use ID对应的孤立toolResult消息
     if (tuIds && tuIds.size > 0) {
       for (let i = messages.length - 1; i >= 0; i--) {
         if (!isToolResultMessage(messages[i])) continue;
@@ -1063,15 +1154,18 @@ function _emergencyTruncateOversized(
  * Truncate an assistant message with tool_use blocks while preserving
  * tool_use structure (type, id, name) to maintain tool pairing.
  * Replaces text blocks with a stub and tool_use input with a compact marker.
+ * 中文：在保留tool_use结构（类型、ID、名称）的前提下截断助手消息，以保持工具配对，用占位符替换文本块并将tool_use输入替换成紧凑标记
  */
 function _truncateAssistantToolUseContent(msg: any, originalTokens: number, logger: PluginLogger): void {
   const content = msg.content ?? msg.message?.content;
   if (!Array.isArray(content)) {
     // Not array content — fall back to simple text replacement
+    // 中文：不是数组内容——回退到简单的文本替换
     _setMessageContent(msg, `[Assistant tool_use message truncated for context management. Original ~${originalTokens} tokens. Tool call arguments removed.]`);
     return;
   }
   // Insert a truncation notice as the first text block
+  // 中文：插入一个截断通知作为第一个文本块
   content.unshift({
     type: "text",
     text: `[Assistant message truncated for context management. Original ~${originalTokens} tokens. Tool call arguments below replaced with stubs.]`,
@@ -1080,6 +1174,7 @@ function _truncateAssistantToolUseContent(msg: any, originalTokens: number, logg
     const block = content[i] as any;
     if (block.type === "tool_use" || block.type === "toolCall") {
       // Preserve id/name/type, replace input with compact stub
+      // 中文：保留id/名称/类型，用紧凑占位符替换输入
       if (block.input !== undefined) {
         block.input = { _truncated: true, _original_tokens: originalTokens };
       }
@@ -1088,6 +1183,7 @@ function _truncateAssistantToolUseContent(msg: any, originalTokens: number, logg
       }
     } else if (block.type === "text") {
       // Truncate text blocks
+      // 中文：文本块截断
       block.text = typeof block.text === "string"
         ? block.text.slice(0, 200) + (block.text.length > 200 ? "…[truncated]" : "")
         : "[truncated]";
@@ -1096,6 +1192,7 @@ function _truncateAssistantToolUseContent(msg: any, originalTokens: number, logg
 }
 
 /** Extract a preview of message content (first N chars) */
+/** 中文：提取消息内容的预览（前N个字符） */
 function _extractContentPreview(msg: any, maxChars: number): string {
   const content = msg.content ?? msg.message?.content;
   if (typeof content === "string") {
@@ -1114,6 +1211,7 @@ function _extractContentPreview(msg: any, maxChars: number): string {
 }
 
 /** Set message content (handles both direct and transcript wrapper format) */
+/** 中文：设置消息内容（处理直接和转录包装格式） */
 function _setMessageContent(msg: any, text: string): void {
   if (msg.type === "message" && msg.message) {
     if (Array.isArray(msg.message.content)) {
@@ -1137,16 +1235,21 @@ function _setMessageContent(msg: any, text: string): void {
  * outside of `content` but still get serialized and counted as tokens.
  *
  * Preserves structural fields (role, type, id, toolCallId, name, tool_call_id).
+ * 中文：在内容截断后从消息中剥离大型非必要字段。
+ * OpenClaw 工具结果消息可能在外层字段如`output`、`result`、`data`、`rawContent`、`response`等存储原始输出，这些字段位于`content`之外但仍会被序列化并计入token数。
+ * 保留结构字段（role、type、id、toolCallId、name、tool_call_id）
  */
 function _stripLargeFields(msg: any): void {
   const PRESERVE_KEYS = new Set([
     "role", "type", "name", "id", "toolCallId", "tool_call_id",
     "content", "message", "status",
     // internal plugin markers
+    // 中文：内部插件标记
     "_offloaded", "_mmdContextMessage", "_mmdInjection", "_contextOffloadProcessed",
     "_cachedTokens", "_tokenCount",
   ]);
   const LARGE_THRESHOLD = 500; // chars — delete any field value > 500 chars serialized
+  // 中文：chars — 删除任何序列化后超过500字符的字段值
 
   const stripObj = (obj: any) => {
     if (!obj || typeof obj !== "object") return;
@@ -1163,12 +1266,14 @@ function _stripLargeFields(msg: any): void {
 
   stripObj(msg);
   // Also strip inside the transcript wrapper
+  // 中文：也在转录包装内剥离
   if (msg.type === "message" && msg.message && typeof msg.message === "object") {
     stripObj(msg.message);
   }
 }
 
 // ─── History MMD Injection ───────────────────────────────────────────────────
+// 中文：───────── 历史MMD注入 ───────────────────────────────────────────────────
 
 export function removeExistingMmdInjections(messages: any[]): number {
   let removed = 0;
@@ -1210,6 +1315,7 @@ export async function buildHistoryMmdInjection(
   if (candidateMmds.length === 0) return { injectedMessages: [], totalMmdTokens: 0, mmdTokenBudget, mmdFiles: [] };
 
   // Reverse: most recent MMDs first (highest prefix number = most recent task)
+  // 中文：逆序：最近的MMD最先（最高前缀编号=最近年任务）
   candidateMmds.reverse();
 
   const injectedMessages: any[] = [];
@@ -1220,6 +1326,7 @@ export async function buildHistoryMmdInjection(
     if (!mmdContent) continue;
 
     // Try full content first
+    // 中文：先尝试完整内容
     const fullText = buildHistoryMmdText(filename, mmdContent);
     const fullTokens = countTokens(fullText);
     if (totalMmdTokens + fullTokens <= mmdTokenBudget) {
@@ -1230,6 +1337,7 @@ export async function buildHistoryMmdInjection(
     }
 
     // Full content exceeds budget — try meta-only (filename + taskGoal + node summary)
+    // 中文：完整内容超出预算——尝试仅元数据（文件名+任务目标+节点摘要）
     const metaText = buildHistoryMmdMetaText(filename, mmdContent);
     const metaTokens = countTokens(metaText);
     if (totalMmdTokens + metaTokens <= mmdTokenBudget) {
@@ -1241,10 +1349,12 @@ export async function buildHistoryMmdInjection(
     }
 
     // Even meta exceeds budget — skip entirely
+    // 中文：即使元数据也超出预算——完全跳过
     logger.debug?.(`[context-offload] History MMD ${filename}: skipped (full=${fullTokens}, meta=${metaTokens}, remaining budget=${mmdTokenBudget - totalMmdTokens})`);
   }
 
   // Reverse back so oldest appears first in messages (chronological order for LLM)
+  // 中文：反序排列以便最旧的内容首先出现（按时间顺序排列给LLM）
   injectedMessages.reverse();
   mmdFiles.reverse();
 
@@ -1266,6 +1376,7 @@ function buildHistoryMmdText(filename: string, mmdContent: string): string {
 }
 
 /** Compact meta-only version when full MMD exceeds token budget */
+/** 中文：当全量MMD超过令牌预算时压缩为仅元数据版本 */
 function buildHistoryMmdMetaText(filename: string, mmdContent: string): string {
   let taskGoal = "";
   const metaMatch = mmdContent.match(/^%%\{\s*(.*?)\s*\}%%/);
@@ -1273,6 +1384,7 @@ function buildHistoryMmdMetaText(filename: string, mmdContent: string): string {
     try { const meta = JSON.parse(`{${metaMatch[1]}}`); taskGoal = meta.taskGoal || ""; } catch { /* */ }
   }
   // Extract node summaries from mermaid: lines like `001-N1["some label"]`
+  // 中文：从mermaid提取节点摘要：类似`001-N1["some label"]`的行
   const nodePattern = /(\d{3}-N\d+)\["([^"]+)"\]/g;
   const nodes: string[] = [];
   let m: RegExpExecArray | null;
@@ -1280,6 +1392,7 @@ function buildHistoryMmdMetaText(filename: string, mmdContent: string): string {
     nodes.push(`${m[1]}: ${m[2]}`);
   }
   // Extract status classes: classDef done/doing/todo + class assignments
+  // 中文：提取状态类：done/doing/todo + 类别分配
   const statusLines: string[] = [];
   const classAssign = /class\s+([\w,-]+)\s+(done|doing|todo)/g;
   while ((m = classAssign.exec(mmdContent)) !== null) {
@@ -1297,6 +1410,7 @@ function buildHistoryMmdMetaText(filename: string, mmdContent: string): string {
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
+// 中文：─── 内部辅助函数 ────────────────────────────────────────────────────────
 
 function extractLatestTurn(historyMessages: any[], currentPrompt: string | null): string | null {
   let lastAssistant: string | null = null;
@@ -1366,6 +1480,7 @@ async function fastPathReApply(messages: any[], stateManager: OffloadStateManage
     }
     // FIX: For mixed assistant messages (text + tool_use), strip deleted tool_use
     // blocks to prevent orphaned tool_use without matching tool_result (Anthropic 400).
+    // 中文：FIX: 对于混合助手消息（文本+工具使用），移除被删除的工具使用块以防止孤立的工具使用没有对应的工具结果（Anthropic 400）。
     if (hasDeleted && isAssistantMessageWithToolUse(msg) && !isOnlyToolUseAssistant(msg)) {
       const content = msg.type === "message" ? msg.message?.content : msg.content;
       if (Array.isArray(content)) {

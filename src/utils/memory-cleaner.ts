@@ -26,6 +26,7 @@ const L0_DIR_NAME = "conversations";
 const L1_DIR_NAME = "records";
 
 /** Minimum records to retain — skip deletion if total is at or below this threshold. */
+/** 中文：保留最小记录数——如果总数等于或低于此阈值则跳过删除。 */
 const MIN_RETAIN_L0 = 50;
 const MIN_RETAIN_L1 = 20;
 
@@ -111,10 +112,13 @@ export class LocalMemoryCleaner {
       const startMs = Date.now();
 
       // ── Pre-delete: count totals and decide whether to proceed ──
+      // 中文：── 预删除：计数总计并决定是否继续 ──
       let totalL0 = 0;
       let totalL1 = 0;
       try { totalL0 = await vectorStore.countL0(); } catch { /* non-fatal */ }
+      // 中文：非致命的
       try { totalL1 = await vectorStore.countL1(); } catch { /* non-fatal */ }
+      // 中文：非致命的
 
       this.opts.logger?.info(
         `${TAG} [Pre-delete] cutoffIso=${cutoffIso}, retentionDays=${retentionDays}, totalL0=${totalL0}, totalL1=${totalL1}`,
@@ -128,6 +132,7 @@ export class LocalMemoryCleaner {
       let failedL1DbCleanup = 0;
 
       // ── L0 cleanup with minimum-retention guard ──
+      // 中文：── 带有最小保留量防护的L0清理 ──
       if (totalL0 <= MIN_RETAIN_L0) {
         skippedL0 = true;
         this.opts.logger?.info(
@@ -145,6 +150,7 @@ export class LocalMemoryCleaner {
       }
 
       // ── L1 cleanup with minimum-retention guard ──
+      // 中文：── 带有最小保留量防护的L1清理 ──
       if (totalL1 <= MIN_RETAIN_L1) {
         skippedL1 = true;
         this.opts.logger?.info(
@@ -166,6 +172,7 @@ export class LocalMemoryCleaner {
       }
 
       // ── Post-delete: audit summary ──
+      // 中文：── 后删除：审核总结 ──
       const durationMs = Date.now() - startMs;
       const remainingL0 = totalL0 - removedL0;
       const remainingL1 = totalL1 - removedL1;
@@ -287,6 +294,7 @@ function extractShardDateFromFileName(
 ): { year: number; month: number; day: number } | undefined {
 
   // Supported format: YYYY-MM-DD.jsonl | YYYY-MM-DD.json
+  // 中文：支持格式：YYYY-MM-DD.jsonl | YYYY-MM-DD.json
   const m = /^(\d{4})-(\d{2})-(\d{2})\.(?:jsonl|json)$/.exec(fileName);
   if (!m) return undefined;
 
@@ -316,6 +324,7 @@ function extractShardDateFromFileName(
 
 function localDayEndMs(year: number, month: number, day: number): number {
   // End of day = start of next day minus 1ms (in configured timezone)
+  // 中文：截止当天 = 下一天开始减去1毫秒（在配置的时间区中）
   const nextDay = new Date(Date.UTC(year, month - 1, day + 1));
   const nextDayStartMs = startOfLocalDay(nextDay);
   return nextDayStartMs - 1;
@@ -337,6 +346,7 @@ function computeCutoffMsByLocalDay(nowMs: number, retentionDays: number): number
   const cutoffMs = todayStartMs - (retentionDays - 1) * 24 * 60 * 60 * 1000;
 
   // Sanity check: cutoff must be strictly in the past
+  // 中文：合理性检查：截止时间必须严格在过去
   if (cutoffMs >= nowMs) {
     throw new Error(
       `cutoff sanity failed: cutoff (${cutoffMs}) >= now (${nowMs}), ` +
@@ -344,6 +354,7 @@ function computeCutoffMsByLocalDay(nowMs: number, retentionDays: number): number
     );
   }
   // Sanity check: gap between now and cutoff must be at least 24h
+  // 中文：空白检查：当前时间和截止时间之间的差距必须至少为24小时
   const MIN_GAP_MS = 24 * 60 * 60 * 1000;
   if (nowMs - cutoffMs < MIN_GAP_MS) {
     throw new Error(

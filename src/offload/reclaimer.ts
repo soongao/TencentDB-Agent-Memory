@@ -12,6 +12,15 @@
  * does not prevent subsequent steps from running.
  *
  * All file-age checks use mtime (last modification time).
+ * 中文：OffloadReclaimer: 定期清理过时的卸载数据文件。
+ * 回收磁盘空间，移除：
+ * 步骤1 — 过期会话JSONL文件（offload-*.jsonl）
+ * 步骤2 — 孤立引用MD文件（refs/*.md）
+ * 步骤3 — 过期MMD文件（mmds/*.mmd），保护活动中的MMD
+ * 步骤4 — 超大尺寸调试日志文件 (*.log 截断)
+ * 步骤5 — 陈旧的sessions-registry.json条目
+ * 每一步独立尝试/捕获——某一步失败不会阻止后续步骤运行。
+ * 所有文件年龄检查使用mtime（最后修改时间）。
  */
 
 import { readdir, stat, unlink, readFile, writeFile, rename, truncate } from "node:fs/promises";
@@ -24,16 +33,21 @@ import type { PluginLogger } from "./types.js";
 // ============================
 // Public types
 // ============================
+// 中文：Public types
 
 /** Configuration for the reclaim operation. */
+/** 中文：回收操作的配置。 */
 export interface ReclaimConfig {
   /** Retention period in days. Values < 3 disable reclamation entirely. */
+  /** 中文：保留期，以天为单位。值小于3完全禁用回收。 */
   retentionDays: number;
   /** Max total size in MB for debug log files. 0 = no log rotation. */
+  /** 中文：调试日志文件的最大总大小，以MB为单位。0 = 无日志轮转。 */
   logMaxSizeMb: number;
 }
 
 /** Statistics returned after a reclaim run. */
+/** 中文：回收运行后返回的统计数据。 */
 export interface ReclaimStats {
   deletedJsonl: number;
   deletedRefs: number;
@@ -45,6 +59,7 @@ export interface ReclaimStats {
 // ============================
 // Constants
 // ============================
+// 中文：常量
 
 const TAG = "[context-offload][reclaim]";
 const MS_PER_DAY = 86_400_000;
@@ -52,12 +67,15 @@ const MS_PER_DAY = 86_400_000;
 // ============================
 // Main entry
 // ============================
+// 中文：主入口
 
 /**
  * Run a full reclamation pass over the offload data directory.
  *
  * Safe to call concurrently (each step is idempotent) but designed
  * for single-caller-per-process via a 24h setInterval.
+ * 中文：对卸载数据目录进行完整的回收处理。
+ * 并发调用是安全的（每一步都是幂等的），但设计为单进程单调用者通过24小时setInterval实现。
  */
 export async function reclaimOffloadData(
   dataRoot: string,
@@ -86,9 +104,11 @@ export async function reclaimOffloadData(
   const cutoffMs = nowMs - config.retentionDays * MS_PER_DAY;
 
   // Discover agent subdirectories (directories inside dataRoot)
+  // 中文：发现agent子目录（dataRoot内的目录）
   const agentDirs = await discoverAgentDirs(dataRoot);
 
   // Step 1: Clean expired session JSONL
+  // 中文：步骤1：清理过期会话JSONL
   try {
     stats.deletedJsonl = await reclaimExpiredJsonl(dataRoot, agentDirs, cutoffMs, logger);
   } catch (err) {
@@ -96,6 +116,7 @@ export async function reclaimOffloadData(
   }
 
   // Step 2: Clean orphan ref MD
+  // 中文：步骤2：清理孤儿ref MD
   try {
     stats.deletedRefs = await reclaimOrphanRefs(agentDirs, cutoffMs, logger);
   } catch (err) {
@@ -103,6 +124,7 @@ export async function reclaimOffloadData(
   }
 
   // Step 3: Clean expired MMD
+  // 中文：步骤3：清理过期MMD
   try {
     stats.deletedMmds = await reclaimExpiredMmds(agentDirs, cutoffMs, logger);
   } catch (err) {
@@ -110,6 +132,7 @@ export async function reclaimOffloadData(
   }
 
   // Step 4: Log rotation
+  // 中文：步骤4：日志轮转
   try {
     stats.truncatedLogs = await rotateDebugLogs(dataRoot, config.logMaxSizeMb, logger);
   } catch (err) {
@@ -117,6 +140,7 @@ export async function reclaimOffloadData(
   }
 
   // Step 5: Registry pruning
+  // 中文：步骤5：注册表修剪
   try {
     stats.prunedRegistryEntries = await pruneRegistries(agentDirs, cutoffMs, logger);
   } catch (err) {
@@ -129,8 +153,10 @@ export async function reclaimOffloadData(
 // ============================
 // Step helpers
 // ============================
+// 中文：步骤助手
 
 /** Discover agent subdirectories under dataRoot. */
+/** 中文：发现dataRoot下的agent子目录。 */
 async function discoverAgentDirs(dataRoot: string): Promise<string[]> {
   const entries = await readdir(dataRoot, { withFileTypes: true });
   return entries
@@ -139,6 +165,7 @@ async function discoverAgentDirs(dataRoot: string): Promise<string[]> {
 }
 
 // ─── Step 1: Expired JSONL ───────────────────────────────────────────────────
+// 中文：─── 步骤1：过期的JSONL ───────────────────────────────────────────────────
 
 async function reclaimExpiredJsonl(
   dataRoot: string,
@@ -149,9 +176,11 @@ async function reclaimExpiredJsonl(
   let deleted = 0;
 
   // Scan dataRoot for root-level offload-*.jsonl (legacy layout)
+  // 中文：在dataRoot中扫描根级的offload-*.jsonl（遗留布局）
   deleted += await deleteExpiredJsonlInDir(dataRoot, cutoffMs, logger);
 
   // Scan each agent directory
+  // 中文：扫描每个agent目录
   for (const dir of agentDirs) {
     deleted += await deleteExpiredJsonlInDir(dir, cutoffMs, logger);
   }
@@ -188,6 +217,7 @@ async function deleteExpiredJsonlInDir(
   }
 
   // Sync-clean sessions-registry.json: remove entries whose offloadFile was deleted
+  // 中文：同步清理sessions-registry.json：移除offloadFile已被删除的条目
   if (deleted > 0) {
     await syncRegistryAfterJsonlDeletion(dir, logger);
   }
@@ -196,6 +226,7 @@ async function deleteExpiredJsonlInDir(
 }
 
 /** Remove registry entries whose offloadFile no longer exists on disk. */
+/** 中文：移除offloadFile在磁盘上不再存在的注册表条目。 */
 async function syncRegistryAfterJsonlDeletion(dir: string, logger: PluginLogger): Promise<void> {
   const registryPath = join(dir, "sessions-registry.json");
   if (!existsSync(registryPath)) return;
@@ -215,10 +246,12 @@ async function syncRegistryAfterJsonlDeletion(dir: string, logger: PluginLogger)
     }
   } catch {
     /* best-effort */
+    /** 中文：尽力而为 */
   }
 }
 
 // ─── Step 2: Orphan refs ─────────────────────────────────────────────────────
+// 中文：─── 步骤2：孤立引用 ─────────────────────────────────────────────────────
 
 async function reclaimOrphanRefs(
   agentDirs: string[],
@@ -232,11 +265,13 @@ async function reclaimOrphanRefs(
     if (!existsSync(refsDir)) continue;
 
     // Build set of referenced ref filenames from surviving JSONL files
+    // 中文：从存活的JSONL文件中构建引用的ref文件名集合
     let referencedRefs: Set<string> | null = null;
     try {
       referencedRefs = await buildReferencedRefSet(agentDir);
     } catch {
       // Fall through: if we can't build the set, use mtime-only fallback
+      // 中文：继续处理：如果无法构建集合，使用mtime仅回退
       logger.warn(`${TAG} Step 2: failed to build ref set for ${agentDir}, using mtime-only fallback`);
     }
 
@@ -254,6 +289,7 @@ async function reclaimOrphanRefs(
         if (isReferenced) continue;
 
         // Not referenced (or ref set unavailable) — check mtime
+        // 中文：未引用（或ref集不可用）——检查mtime
         const s = await stat(filePath);
         if (s.mtimeMs < cutoffMs) {
           await unlink(filePath);
@@ -262,6 +298,7 @@ async function reclaimOrphanRefs(
         }
       } catch {
         /* skip individual file errors */
+        /** 中文：跳过个别文件错误 */
       }
     }
   }
@@ -270,6 +307,7 @@ async function reclaimOrphanRefs(
 }
 
 /** Parse all offload-*.jsonl in an agent dir, collect referenced ref filenames. */
+/** 中文：解析agent目录下的所有offload-*.jsonl，收集引用的ref文件名。 */
 async function buildReferencedRefSet(agentDir: string): Promise<Set<string>> {
   const refs = new Set<string>();
   let files: string[];
@@ -288,11 +326,13 @@ async function buildReferencedRefSet(agentDir: string): Promise<Set<string>> {
         const resultRef = entry.result_ref;
         if (typeof resultRef === "string" && resultRef.length > 0) {
           // result_ref format: "refs/2026-04-12T17-26-08-123p08-00.md"
+          // 中文：result_ref格式: "refs/2026-04-12T17-26-08-123p08-00.md"
           refs.add(basename(resultRef));
         }
       }
     } catch {
       /* skip corrupt files */
+      /** 中文：跳过损坏的文件 */
     }
   }
 
@@ -300,8 +340,10 @@ async function buildReferencedRefSet(agentDir: string): Promise<Set<string>> {
 }
 
 // ─── Step 3: Expired MMDs ────────────────────────────────────────────────────
+// 中文：─── 步骤 3：过期的MMD ─────────────────────────────────────────────────────
 
 /** Minimum number of MMD files to keep per agent, regardless of age. */
+/** 中文：每个代理保留的MMD文件最小数量，不论年龄。 */
 const MIN_KEEP_MMDS = 15;
 
 async function reclaimExpiredMmds(
@@ -316,6 +358,7 @@ async function reclaimExpiredMmds(
     if (!existsSync(mmdsDir)) continue;
 
     // Read activeMmdFile from state.json to protect it
+    // 中文：从state.json读取activeMmdFile以保护它
     let activeMmdFile: string | null = null;
     try {
       const stateFile = join(agentDir, "state.json");
@@ -326,6 +369,7 @@ async function reclaimExpiredMmds(
       }
     } catch {
       /* state.json unreadable — proceed without protection (conservative: skip all) */
+      /** 中文：state.json不可读——无需保护（保守策略：跳过所有） */
     }
 
     let mmdFiles: string[];
@@ -336,9 +380,11 @@ async function reclaimExpiredMmds(
     }
 
     // If total count <= MIN_KEEP_MMDS, nothing to delete
+    // 中文：如果总数 <= MIN_KEEP_MMDS，则无删除操作
     if (mmdFiles.length <= MIN_KEEP_MMDS) continue;
 
     // Stat all files to get mtime, then sort oldest-first
+    // 中文：统计所有文件以获取mtime，然后按最旧排序
     const fileMetas: Array<{ name: string; mtimeMs: number }> = [];
     for (const file of mmdFiles) {
       try {
@@ -346,16 +392,21 @@ async function reclaimExpiredMmds(
         fileMetas.push({ name: file, mtimeMs: s.mtimeMs });
       } catch {
         /* skip unstat-able files */
+        /** 中文：跳过无法统计的文件 */
       }
     }
     fileMetas.sort((a, b) => a.mtimeMs - b.mtimeMs); // oldest first
+    // 中文：最早优先
 
     // Walk oldest-first, delete expired ones but stop when we'd drop below MIN_KEEP_MMDS
+    // 中文：按最旧顺序遍历，删除过期文件但停止在数量低于MIN_KEEP_MMDS时
     let remaining = fileMetas.length;
     for (const meta of fileMetas) {
       if (remaining <= MIN_KEEP_MMDS) break;
       if (meta.name === activeMmdFile) continue; // never delete active MMD
+      // 中文：永不删除活动MMD
       if (meta.mtimeMs >= cutoffMs) continue;    // not expired
+      // 中文：未过期
 
       const filePath = join(mmdsDir, meta.name);
       try {
@@ -373,6 +424,7 @@ async function reclaimExpiredMmds(
 }
 
 // ─── Step 4: Log rotation ────────────────────────────────────────────────────
+// 中文：─── 步骤 4：日志轮转 ───────────────────────────────────────────────────
 
 async function rotateDebugLogs(
   dataRoot: string,
@@ -390,6 +442,7 @@ async function rotateDebugLogs(
   }
 
   // Collect *.log and debug *.jsonl files (NOT offload-*.jsonl which are data)
+  // 中文：收集*.log和debug *.jsonl文件（NOT offload-*.jsonl，这些是数据）
   const logFiles: Array<{ name: string; path: string; size: number }> = [];
   for (const name of entries) {
     const isLog = name.endsWith(".log");
@@ -411,6 +464,7 @@ async function rotateDebugLogs(
   if (totalSize <= maxBytes) return 0;
 
   // Sort by size descending — truncate largest first
+  // 中文：按大小降序排序——先截断最大的
   logFiles.sort((a, b) => b.size - a.size);
 
   let truncated = 0;
@@ -432,6 +486,7 @@ async function rotateDebugLogs(
 }
 
 // ─── Step 5: Registry pruning ────────────────────────────────────────────────
+// 中文：─── 步骤5：注册表修剪 ────────────────────────────────────────────────
 
 async function pruneRegistries(
   agentDirs: string[],
@@ -478,8 +533,10 @@ async function pruneRegistries(
 // ============================
 // Helpers
 // ============================
+// 中文：辅助函数
 
 /** Atomic JSON write: write to tmp file, then rename into place. */
+/** 中文：原子性JSON写入：先写入临时文件，然后重命名到位 */
 async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {
   const tmp = `${filePath}.tmp.${randomBytes(4).toString("hex")}`;
   await writeFile(tmp, JSON.stringify(data, null, 2), "utf-8");

@@ -9,6 +9,14 @@
 #          hermes-memory
 #
 # Hermes and TDAI share a single set of model config via MODEL_* env vars.
+# 中文：TDAI 内存 + 赫尔墨斯代理 — 全功能开源镜像
+# 基于 install_hermes_ubuntu24.04_hongkong.sh 安装逻辑。
+# 预安装赫尔墨斯代理 + memory_tencentdb 插件 + TDAI 内存网关。
+# 构建: docker build -f Dockerfile.hermes -t hermes-memory .
+# 运行:   docker run -it -p 8420:8420 \
+# -e MODEL_API_KEY=xxx \
+# hermes-memory
+# 赫尔墨斯和 TDAI 通过 MODEL_* 环境变量共享一套模型配置。
 
 FROM ubuntu:24.04
 
@@ -18,10 +26,12 @@ ENV PYTHONUNBUFFERED=1
 # ============================================================
 # System dependencies (mirrors install script)
 # ============================================================
+# 中文：系统依赖（镜像安装脚本）
 RUN apt-get update && \
     apt-get install -y git curl ripgrep ffmpeg python3-pip python3-venv \
         build-essential python3-dev make g++ && \
     # Node.js 22
+    # 中文：Node.js 22
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
@@ -29,6 +39,7 @@ RUN apt-get update && \
 # ============================================================
 # Install TDAI Memory Gateway (npm)
 # ============================================================
+# 中文：安装 TDAI 内存网关 (npm)
 WORKDIR /opt/tdai-gateway
 
 RUN echo '{"name":"tdai-memory-standalone","version":"1.0.0","type":"module","private":true}' > package.json && \
@@ -38,44 +49,56 @@ RUN echo '{"name":"tdai-memory-standalone","version":"1.0.0","type":"module","pr
 # ============================================================
 # Install Hermes Agent (official installer, skip browser)
 # ============================================================
+# 中文：安装赫尔墨斯代理 (官方安装程序，跳过浏览器)
 ENV HERMES_SKIP_BROWSER_SETUP=1
 
 RUN curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh -o /tmp/install-hermes.sh && \
     # Patch: skip browser setup
+    # 中文：补丁: 跳过浏览器设置
     sed -i '/^install_node_deps() {/a\    if [ "${HERMES_SKIP_BROWSER_SETUP:-0}" = "1" ]; then echo "Skipping browser deps"; return 0; fi' /tmp/install-hermes.sh && \
     # Patch: shallow clone
+    # 中文：补丁: 浅克隆
     sed -i 's/git clone --branch/git clone --depth 1 --branch/' /tmp/install-hermes.sh && \
     HOME=/root bash /tmp/install-hermes.sh --skip-setup && \
     rm -f /tmp/install-hermes.sh
 
 # Hermes data dir (user-independent)
+# 中文：赫尔墨斯数据目录（用户无关）
 ENV HERMES_HOME=/opt/data
 
 # Remove installer-generated config so HERMES_HOME takes sole precedence
+# 中文：移除安装器生成的配置以使HERMES_HOME优先
 RUN rm -f /root/.hermes/config.yaml /root/.hermes/.env
 
 # Link memory_tencentdb plugin into Hermes bundled plugin discovery path
 # (plugins/memory/__init__.py scans <hermes-repo>/plugins/memory/<name>/)
+# 中文：将memory_tencentdb插件链接到Hermes捆绑插件发现路径
+# (plugins/memory/__init__.py扫描<hermes-repo>/plugins/memory/<name>)
 RUN ln -sf /opt/tdai-gateway/node_modules/@tencentdb-agent-memory/memory-tencentdb/hermes-plugin/memory/memory_tencentdb \
     /usr/local/lib/hermes-agent/plugins/memory/memory_tencentdb
 
 # ============================================================
 # Configuration — Unified model config (shared by Hermes + TDAI)
 # ============================================================
+# 中文：配置 — 统一模型配置（由Hermes + TDAI共享）
 RUN mkdir -p /opt/data/tdai-memory
 
 # -- Unified model config (users only need to set these) --
 # MODEL_API_KEY must be passed at runtime via -e (not baked into image)
+# 中文：-- 统一模型配置（用户只需设置这些）--
+# MODEL_API_KEY必须在运行时通过-e传递（不嵌入到镜像中）
 ENV MODEL_NAME=deepseek-v3.2
 ENV MODEL_BASE_URL=https://api.lkeap.cloud.tencent.com/v1
 ENV MODEL_PROVIDER=custom
 
 # -- Gateway port --
+# 中文：-- 网关端口 --
 ENV TDAI_GATEWAY_PORT=8420
 ENV TDAI_GATEWAY_HOST=0.0.0.0
 ENV TDAI_DATA_DIR=/opt/data/tdai-memory
 
 # -- Plugin connection (Hermes -> Gateway) --
+# 中文：-- 插件连接（Hermes -> 网关） --
 ENV MEMORY_TENCENTDB_GATEWAY_HOST=127.0.0.1
 ENV MEMORY_TENCENTDB_GATEWAY_PORT=8420
 
@@ -89,6 +112,8 @@ VOLUME ["/opt/data"]
 # CMD: Sync MODEL_* -> generate configs -> start Gateway (foreground)
 #      Use: docker exec hermes-memory hermes  (on-demand)
 # ============================================================
+# 中文：CMD: 同步MODEL_* -> 生成配置 -> 启动网关（前台模式）
+# 用法: docker exec hermes-memory hermes  (按需使用)
 CMD ["bash", "-c", "\
   mkdir -p /opt/data/tdai-memory && \
   CFG=/opt/data/config.yaml && \

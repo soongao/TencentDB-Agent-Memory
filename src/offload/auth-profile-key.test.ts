@@ -4,6 +4,7 @@ import { resolveApiKeyFromAuthProfile } from "./auth-profile-key.js";
 /**
  * Build a fake provider-auth SDK whose store contains the given profiles and
  * whose `listProfilesForProvider` maps a provider name to its profile ids.
+ * 中文：构建一个假的provider-auth SDK，其store包含给定的配置文件，并且`listProfilesForProvider`将提供程序名称映射到其配置文件ID.
  */
 function makeSdk(
   profiles: Record<string, { type?: string; key?: string; keyRef?: unknown }>,

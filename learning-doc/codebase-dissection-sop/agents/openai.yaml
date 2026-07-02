@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codebase Dissection SOP"
+  short_description: "Dissect codebases with docs and HTML"
+  default_prompt: "Use this skill to dissect this project into Markdown docs, diagrams, a realistic debug walkthrough, and an interactive HTML walkthrough."

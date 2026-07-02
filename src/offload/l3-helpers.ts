@@ -1,6 +1,8 @@
 /**
  * L3 shared helper functions.
  * Used by both before-prompt-build (fast-path re-apply) and llm-input-l3 (compression).
+ * 中文：L3 共享辅助函数。
+ * 同时用于 before-prompt-build（快速路径重新应用）和 llm-input-l3（压缩）.
  */
 import { readMmd, type StorageContext } from "./storage.js";
 import { invalidateTokenCache } from "./context-token-tracker.js";
@@ -10,6 +12,7 @@ import type { OffloadStateManager } from "./state-manager.js";
 /**
  * Anthropic-style tool ids sometimes appear as `toolu_bdrk_01...` (underscores)
  * in offload.jsonl while the live session uses `toolubdrk01...`. Normalize for lookup.
+ * 中文：Anthropic风格的工具ID有时在offload.jsonl中显示为`toolu_bdrk_01...`（包含下划线），而在实时会话中使用`toolubdrk01...`。进行规范化以方便查找。
  */
 export function normalizeToolCallIdForLookup(id: string): string {
   return id.replace(/_/g, "");
@@ -25,6 +28,7 @@ export function getOffloadEntry(
 }
 
 /** Index offload entries by canonical id and by underscore-free form when they differ. */
+/** 中文：通过规范ID和无下划线形式对卸载条目进行索引，当它们不同时。 */
 export function populateOffloadLookupMap(
   map: Map<string, OffloadEntry>,
   entries: OffloadEntry[],
@@ -39,6 +43,7 @@ export function populateOffloadLookupMap(
 }
 
 /** Check if a message is a tool result */
+/** 中文：检查一条消息是否为工具结果 */
 export function isToolResultMessage(msg: any): boolean {
   if (msg.type === "message") {
     const message = msg.message;
@@ -53,6 +58,7 @@ export function isToolResultMessage(msg: any): boolean {
 }
 
 /** Extract tool call ID from a tool result message */
+/** 中文：从工具结果消息中提取工具调用ID */
 export function extractToolCallId(msg: any): string | null {
   if (msg.type === "message") {
     const message = msg.message;
@@ -65,11 +71,13 @@ export function extractToolCallId(msg: any): string | null {
 }
 
 /** Check if a content block is a tool use block */
+/** 中文：检查内容块是否为工具使用块 */
 export function isToolUseBlock(block: any): boolean {
   return block.type === "tool_use" || block.type === "toolCall";
 }
 
 /** Get message content (handles transcript wrapper format) */
+/** 中文：获取消息内容（处理转录包装格式） */
 export function getMessageContent(msg: any): any {
   if (msg.type === "message") {
     const message = msg.message;
@@ -79,6 +87,7 @@ export function getMessageContent(msg: any): any {
 }
 
 /** Check if an assistant message contains tool_use blocks */
+/** 中文：检查助手消息是否包含tool_use块 */
 export function isAssistantMessageWithToolUse(msg: any): boolean {
   const content = getMessageContent(msg);
   if (!Array.isArray(content)) return false;
@@ -86,11 +95,13 @@ export function isAssistantMessageWithToolUse(msg: any): boolean {
 }
 
 /** Check if message contains tool_use (alias) */
+/** 中文：检查消息是否包含tool_use（别名） */
 export function isToolUseInAssistant(msg: any): boolean {
   return isAssistantMessageWithToolUse(msg);
 }
 
 /** Extract tool_use ID from an assistant message (first tool_use block) */
+/** 中文：从助手消息中提取第一个tool_use块的ID */
 export function extractToolUseIdFromAssistant(msg: any): string | null {
   const content = getMessageContent(msg);
   if (!Array.isArray(content)) return null;
@@ -103,6 +114,7 @@ export function extractToolUseIdFromAssistant(msg: any): string | null {
 
 /**
  * Check if an assistant message contains ONLY tool_use blocks (no text or other content).
+ * 中文：检查助手消息是否仅包含tool_use块（无文本或其他内容）
  */
 export function isOnlyToolUseAssistant(msg: any): boolean {
   const wrapped = msg.type === "message" ? msg.message : msg;
@@ -114,6 +126,7 @@ export function isOnlyToolUseAssistant(msg: any): boolean {
 }
 
 /** Extract ALL tool_use block IDs from an assistant message */
+/** 中文：从助手消息中提取所有tool_use块的ID */
 export function extractAllToolUseIds(msg: any): string[] {
   const content = getMessageContent(msg);
   if (!Array.isArray(content)) return [];
@@ -129,6 +142,7 @@ const COMPACT_TOOL_CALL_MAX_TOTAL = 300;
 const COMPACT_ARG_TRUNCATE_AT = 60;
 
 /** Truncate a tool_call string to a compact form */
+/** 中文：将tool_call字符串裁剪为紧凑形式 */
 export function compactToolCall(toolCall: string | null | undefined): string {
   if (!toolCall || typeof toolCall !== "string") return toolCall ?? "";
   if (toolCall.length <= COMPACT_TOOL_CALL_MAX_TOTAL) return toolCall;
@@ -180,6 +194,7 @@ export function compactToolCall(toolCall: string | null | undefined): string {
 /**
  * Compress a pure tool_use assistant message by replacing each tool_use block's
  * input/arguments with a compact offload summary.
+ * 中文：压缩纯tool_use助手消息，用每个tool_use块的紧凑卸载摘要替换其输入/参数。
  */
 export function replaceAssistantToolUseWithSummary(
   msg: any,
@@ -220,6 +235,7 @@ export function replaceAssistantToolUseWithSummary(
 }
 
 /** Replace a tool result message's content with the offload summary.
+ * 中文：用卸载摘要替换工具结果消息的内容。返回原始内容和摘要内容长度以供诊断。
  *  Returns original and summary content lengths for diagnostics. */
 export function replaceWithSummary(msg: any, entry: OffloadEntry): { originalLength: number; summaryLength: number } {
   const summaryContent = [
@@ -229,6 +245,7 @@ export function replaceWithSummary(msg: any, entry: OffloadEntry): { originalLen
   ].join("\n");
 
   // Measure original content length
+  // 中文：测量原始内容长度
   let originalLength = 0;
   const extractLength = (content: any): number => {
     if (typeof content === "string") return content.length;
@@ -260,6 +277,7 @@ export function replaceWithSummary(msg: any, entry: OffloadEntry): { originalLen
 
 /**
  * Compress non-current-task tool_use blocks inside an assistant message.
+ * 中文：压缩助手消息内的非当前任务tool_use块.
  */
 export function compressNonCurrentToolUseBlocks(
   msg: any,
@@ -303,6 +321,7 @@ export function compressNonCurrentToolUseBlocks(
 }
 
 /** Get the set of node_ids belonging to the current active task */
+/** 中文：获取当前活跃任务所属的node_ids集合. */
 export async function getCurrentTaskNodeIds(
   stateManager: OffloadStateManager,
 ): Promise<Set<string>> {

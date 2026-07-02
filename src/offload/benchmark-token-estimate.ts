@@ -1,5 +1,6 @@
 /**
  * Benchmark: fastEstimateTokens vs tiktoken cl100k_base
+ * 中文：基准测试：fastEstimateTokens vs tiktoken cl100k_base
  */
 import { fastEstimateTokens } from "../src/offload/fast-token-estimate.ts";
 import { getEncoding } from "js-tiktoken";
@@ -15,6 +16,7 @@ function tiktokenCount(text: string): number {
 }
 
 // Load corpus
+// 中文：加载语料库
 const corpusDir = join(__dirname, "../token_count/corpus");
 const testTexts: { name: string; text: string }[] = [];
 
@@ -31,6 +33,7 @@ if (existsSync(corpusDir)) {
 }
 
 // Add typical agent scenarios
+// 中文：添加典型代理场景
 testTexts.push({ name: "json_messages", text: JSON.stringify([
   { role: "user", content: "Hello world" },
   { role: "assistant", content: "Hi! How can I help?" },

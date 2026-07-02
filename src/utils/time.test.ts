@@ -19,12 +19,14 @@ describe("time module", () => {
   // ============================
   // resolveTimeZone / initTimeModule
   // ============================
+  // 中文：resolveTimeZone / initTimeModule
 
   describe("initTimeModule / resolveTimeZone", () => {
     it("defaults to system timezone when no config", () => {
       initTimeModule({});
       const tz = getActiveTimeZone();
       // Should be a valid IANA timezone from the system
+      // 中文：应为系统中的有效IANA时区
       expect(tz).toBeTruthy();
       expect(() => new Intl.DateTimeFormat("en-US", { timeZone: tz })).not.toThrow();
     });
@@ -106,6 +108,7 @@ describe("time module", () => {
   // ============================
   // _resetTimeModuleForTest
   // ============================
+  // 中文：_resetTimeModuleForTest
 
   describe("_resetTimeModuleForTest", () => {
     it("resets timezone back to UTC", () => {
@@ -119,6 +122,7 @@ describe("time module", () => {
   // ============================
   // A-type: nowInstantISO
   // ============================
+  // 中文：A-type: nowInstantISO
 
   describe("nowInstantISO", () => {
     it("returns ISO 8601 string with Z suffix", () => {
@@ -133,6 +137,7 @@ describe("time module", () => {
       initTimeModule({ timezone: "America/New_York" });
       const t2 = nowInstantISO();
       // Both should be valid UTC and close in time
+      // 中文：两者都应在UTC下且时间接近
       const d1 = new Date(t1).getTime();
       const d2 = new Date(t2).getTime();
       expect(Math.abs(d1 - d2)).toBeLessThan(1000);
@@ -142,11 +147,13 @@ describe("time module", () => {
   // ============================
   // B-type: formatLocalDate
   // ============================
+  // 中文：B-type: formatLocalDate
 
   describe("formatLocalDate", () => {
     it("formats as YYYY-MM-DD in configured timezone", () => {
       initTimeModule({ timezone: "Asia/Shanghai" });
       // 2026-06-01T20:00:00Z = 2026-06-02 04:00 in CST
+      // 中文：2026-06-01T20:00:00Z = 2026-06-02 04:00 在CST时区
       const d = new Date("2026-06-01T20:00:00Z");
       expect(formatLocalDate(d)).toBe("2026-06-02");
     });
@@ -156,6 +163,10 @@ describe("time module", () => {
       // In UTC: Jan 1
       // In Asia/Shanghai (+8): Jan 1 11:00 → Jan 1
       // In America/New_York (-5): Dec 31 22:00 → Dec 31
+      // 中文：2026-01-01T03:00:00Z
+      // 在UTC下：1月1日
+      // 在上海时间(+8)：1月1日 11:00 → 1月1日
+      // 在美国东部时间(-5)：12月31日 22:00 → 12月31日
       const d = new Date("2026-01-01T03:00:00Z");
 
       initTimeModule({ timezone: "UTC" });
@@ -174,10 +185,13 @@ describe("time module", () => {
       initTimeModule({ timezone: "Europe/London" });
       // 2026-03-29 is the BST switch day (clocks go forward at 01:00)
       // 2026-03-29T00:30:00Z = 00:30 GMT (before switch) → Mar 29
+      // 中文：2026-03-29 是BST切换日（时钟在01:00前移）
+      // 2026-03-29T00:30:00Z = 00:30 GMT （切换前） → 3月29日
       const beforeSwitch = new Date("2026-03-29T00:30:00Z");
       expect(formatLocalDate(beforeSwitch)).toBe("2026-03-29");
 
       // 2026-03-29T01:30:00Z = 02:30 BST (after switch) → still Mar 29
+      // 中文：2026-03-29T01:30:00Z = 02:30 BST （切换后） → 仍为3月29日
       const afterSwitch = new Date("2026-03-29T01:30:00Z");
       expect(formatLocalDate(afterSwitch)).toBe("2026-03-29");
     });
@@ -193,6 +207,7 @@ describe("time module", () => {
   // ============================
   // B-type: formatLocalDateTime
   // ============================
+  // 中文：B型：formatLocalDateTime
 
   describe("formatLocalDateTime", () => {
     it("formats as YYYY-MM-DD HH:mm:ss", () => {
@@ -217,14 +232,18 @@ describe("time module", () => {
   // ============================
   // B-type: startOfLocalDay
   // ============================
+  // 中文：B型：startOfLocalDay
 
   describe("startOfLocalDay", () => {
     it("returns midnight UTC ms for configured timezone", () => {
       initTimeModule({ timezone: "Asia/Shanghai" });
       // For 2026-06-02 in CST, midnight = 2026-06-01T16:00:00Z
+      // 中文：对于2026-06-02在CST时，午夜 = 2026-06-01T16:00:00Z
       const d = new Date("2026-06-02T04:00:00Z"); // 12:00 CST on Jun 2
+      // 中文：2023-06-02 下午12:00
       const start = startOfLocalDay(d);
       // Midnight CST Jun 2 = UTC Jun 1 16:00
+      // 中文：CST 6月2日午夜 = UTC 6月1日16:00
       expect(start).toBe(new Date("2026-06-01T16:00:00Z").getTime());
     });
 
@@ -238,6 +257,7 @@ describe("time module", () => {
     it("works for negative offset timezone", () => {
       initTimeModule({ timezone: "America/New_York" });
       // In winter (EST = UTC-5), midnight EST = 05:00 UTC
+      // 中文：冬季（EST = UTC-5），午夜EST = 05:00 UTC
       const d = new Date("2026-01-15T10:00:00Z"); // 05:00 EST
       const start = startOfLocalDay(d);
       expect(start).toBe(new Date("2026-01-15T05:00:00Z").getTime());
@@ -247,6 +267,7 @@ describe("time module", () => {
   // ============================
   // C-type: formatForLLM
   // ============================
+  // 中文：C型：formatForLLM
 
   describe("formatForLLM", () => {
     it("formats Date with timezone offset", () => {
@@ -299,6 +320,8 @@ describe("time module", () => {
       initTimeModule({ timezone: "Europe/Berlin" });
       // 2025-12-15T22:00:00.000Z — old data stored as UTC
       // Berlin in winter = CET = UTC+1, so 23:00:00+01:00
+      // 中文：2025-12-15T22:00:00.000Z — old data stored as UTC
+      // 柏林在冬季 = CET = UTC+1, 所以 23:00:00+01:00
       const result = formatForLLM("2025-12-15T22:00:00.000Z");
       expect(result).toBe("2025-12-15T23:00:00+01:00");
     });
@@ -307,6 +330,7 @@ describe("time module", () => {
   // ============================
   // C-type: describeTimeZoneForPrompt
   // ============================
+  // 中文：C-type: describeTimeZoneForPrompt
 
   describe("describeTimeZoneForPrompt", () => {
     it("includes timezone name and offset", () => {

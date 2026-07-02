@@ -104,6 +104,7 @@ metadata 字段说明：
 // ============================
 // Prompt Builder
 // ============================
+// 中文：提示构建器
 
 /**
  * Format the user prompt for L1 extraction.
@@ -111,6 +112,10 @@ metadata 字段说明：
  * @param newMessages - Messages to extract memories from (with ids and timestamps)
  * @param backgroundMessages - Previous messages for context only (not for extraction)
  * @param previousSceneName - The last known scene name (for continuity)
+ * 中文：格式化用户提示以供L1提取。
+ * @param newMessages - 用于提取记忆的消息（包含id和时间戳）
+ * @param backgroundMessages - 仅作为背景的先前消息（不用于提取）
+ * @param previousSceneName - 最后已知的场景名称（用于连续性）
  */
 export function formatExtractionPrompt(params: {
   newMessages: ConversationMessage[];

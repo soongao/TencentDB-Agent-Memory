@@ -18,6 +18,18 @@
  *
  * Persona update requests are communicated via text output signals (out-of-band),
  * parsed by the engineering side after LLM execution completes.
+ * 中文：场景提取提示 — 指示LLM将记忆合并为场景块
+ * 使用文件工具（读取、写入、编辑）。
+ * v2: 分割成systemPrompt（角色+约束+工作流+输出规范）和userPrompt（动态数据）。工具名称与OpenClaw实际API对齐。
+ * 场景文件可通过以下方式更新：
+ * - 读取+写入（全量重写），用于大规模结构变更
+ * - 编辑（目标化部分更新，例如更新单个部分）
+ * 安全：LLM仅沙箱在scene_blocks/目录下（workspaceDir = scene_blocks/）。
+ * 它对checkpoint、scene_index、persona.md或其他系统文件没有任何可见性。
+ * 文件删除通过“软删除”实现——向文件写入标记`[DELETED]`
+ * — 然后SceneExtractor使用fs.unlink移除这些被软删除的文件。
+ * 注意：核心写入工具参数验证拒绝空字符串或空白字符串，因此我们使用非空标记代替。
+ * 人物更新请求通过文本输出信号（带外）传达，在LLM执行完成后由工程侧解析。
  */
 
 export interface SceneExtractionPromptParams {
@@ -26,8 +38,10 @@ export interface SceneExtractionPromptParams {
   currentTimestamp: string;
   sceneCountWarning?: string;
   /** List of existing scene filenames (relative, e.g. ["work.md", "hobby.md"]) */
+  /** 中文：现有场景文件名列表（相对路径，例如["work.md", "hobby.md"]） */
   existingSceneFiles?: string[];
   /** Maximum number of scene blocks allowed */
+  /** 中文：允许的最大场景块数量 */
   maxScenes: number;
 }
 
@@ -40,6 +54,8 @@ export interface SceneExtractionPromptResult {
 // System Prompt builder (role + constraints + workflow + output spec)
 // Contains maxScenes as a constraint parameter.
 // ============================
+// 中文：系统提示构建器（角色+约束+工作流+输出规范）
+// 包含maxScenes作为约束参数。
 
 function buildSceneSystemPrompt(maxScenes: number): string {
   return `# Memory Consolidation Architect
@@ -261,6 +277,7 @@ reason: 具体原因描述
 // ============================
 // User Prompt builder (dynamic data)
 // ============================
+// 中文：用户提示构建器（动态数据）
 
 export function buildSceneExtractionPrompt(params: SceneExtractionPromptParams): SceneExtractionPromptResult {
   const {

@@ -14,6 +14,13 @@
  * to avoid excessively long seed runs, but means seed output may not include
  * the latest L2/L3 artifacts.  Re-evaluate adding a full L1+L2+L3 idle wait
  * once pipeline-manager exposes reliable L2/L3 idle signals.
+ * 中文：种子运行时：L0→L1→L2→L3编排用于`seed`命令。
+ * 使用共享的pipeline-factory初始化VectorStore/EmbeddingService，
+ * L1运行器、L2运行器、L3运行器和持久化绑定——保持此模块专注于种子特定的问题：
+ * - 每轮同步捕获并报告进度
+ * - waitForL1Idle轮询（仅限L1 — 请参阅下方的FIXME）
+ * - Ctrl+C优雅关闭
+ * FIXME：目前我们只在销毁pipeline前等待L1空闲。L2（场景提取）和L3（人物生成）可能仍在进行中时`pipeline.destroy()`被调用。这是为了防止种子运行时间过长而故意为之，但意味着种子输出可能不包含最新的L2/L3成果。一旦pipeline-manager提供可靠的L2/L3空闲信号，重新评估是否添加完整的L1+L2+L3空闲等待。
  */
 
 import path from "node:path";
@@ -37,34 +44,44 @@ const TAG = "[memory-tdai] [seed]";
 // ============================
 // Seed pipeline options
 // ============================
+// 中文：种子管道选项
 
 export interface SeedRuntimeOptions {
   /** Directory to store all seed output (L0, checkpoint, vectors.db). */
+  /** 中文：用于存储所有种子输出（L0、检查点、vectors.db）的目录。 */
   outputDir: string;
   /** OpenClaw config object (needed for LLM calls in L1). */
+  /** 中文：OpenClaw配置对象（在L1中进行LLM调用所需）。 */
   openclawConfig: unknown;
   /** Raw plugin config (same shape as api.pluginConfig). */
+  /** 中文：原始插件配置（与api.pluginConfig形状相同）。 */
   pluginConfig?: Record<string, unknown>;
   /** Original input file path (for manifest traceability). */
+  /** 中文：原始输入文件路径（用于元数据可追溯性）。 */
   inputFile?: string;
   /** Logger instance. */
+  /** 中文：日志实例。 */
   logger: PipelineLogger;
   /** Progress callback (called after each round). */
+  /** 中文：进度回调（每轮后调用）。 */
   onProgress?: (progress: SeedProgress) => void;
 }
 
 // ============================
 // Seed pipeline creation
 // ============================
+// 中文：种子管道创建
 
 /**
  * Create a seed pipeline using the shared factory, with L2/L3 runners
  * wired via shared factory functions (same logic as index.ts live runtime).
+ * 中文：使用共享工厂创建种子管道，通过共享工厂函数连接L2/L3运行器（逻辑与index.ts在线运行时相同）
  */
 async function createSeedPipeline(opts: SeedRuntimeOptions): Promise<{ pipeline: PipelineInstance; cfg: MemoryTdaiConfig }> {
   const { outputDir, openclawConfig, pluginConfig, logger } = opts;
 
   // Parse config — all values come from pluginConfig (or parseConfig defaults)
+  // 中文：解析配置——所有值均来自pluginConfig（或parseConfig默认值）
   const cfg = parseConfig(pluginConfig);
 
   logger.info(
@@ -76,6 +93,7 @@ async function createSeedPipeline(opts: SeedRuntimeOptions): Promise<{ pipeline:
   // Create standalone LLM runners if cfg.llm is configured.
   // Seed always runs outside OpenClaw, so it needs standalone runners
   // unless an explicit openclawConfig is provided (rare).
+  // 中文：如果cfg.llm已配置，则创建独立的LLM运行器。种子始终在OpenClaw外部运行，因此除非提供了显式的openclawConfig（很少见），否则需要独立的运行器
   let l1LlmRunner: LLMRunner | undefined;
   let l2l3LlmRunner: LLMRunner | undefined;
 
@@ -97,6 +115,7 @@ async function createSeedPipeline(opts: SeedRuntimeOptions): Promise<{ pipeline:
   }
 
   // Use shared factory for everything: store init, L1 runner, persister, destroy
+  // 中文：使用共享工厂处理一切：存储初始化、L1运行器、持久化、销毁
   const pipeline = await createPipeline({
     pluginDataDir: outputDir,
     cfg,
@@ -106,6 +125,7 @@ async function createSeedPipeline(opts: SeedRuntimeOptions): Promise<{ pipeline:
   });
 
   // Wire L2 runner via shared factory (same logic as index.ts live runtime)
+  // 中文：通过共享工厂连接L2运行器（逻辑与index.ts在线运行时相同）
   pipeline.scheduler.setL2Runner(createL2Runner({
     pluginDataDir: outputDir,
     cfg,
@@ -116,6 +136,7 @@ async function createSeedPipeline(opts: SeedRuntimeOptions): Promise<{ pipeline:
   }));
 
   // Wire L3 runner via shared factory (same logic as index.ts live runtime)
+  // 中文：通过共享工厂连接L3运行器（逻辑与index.ts在线运行时相同）
   pipeline.scheduler.setL3Runner(createL3Runner({
     pluginDataDir: outputDir,
     cfg,
@@ -131,10 +152,13 @@ async function createSeedPipeline(opts: SeedRuntimeOptions): Promise<{ pipeline:
 // ============================
 // waitForL1Idle
 // ============================
+// 中文：等待L1空闲
 
 /**
  * Poll pipeline queue status until L1 is idle for a given session.
  * Modeled after benchmark-ingest.ts waitForPipelineIdle() but focused on L1 only.
+ * 中文：直到给定会话的L1管道队列空闲，检查L1管道队列状态。
+ * 参考benchmark-ingest.ts中的waitForPipelineIdle()实现，但仅关注L1.
  */
 async function waitForL1Idle(
   scheduler: MemoryPipelineManager,
@@ -149,6 +173,7 @@ async function waitForL1Idle(
   const pollInterval = opts.pollIntervalMs ?? 1_000;
   const stableRounds = opts.stableRounds ?? 3;
   const maxWait = opts.maxWaitMs ?? 300_000; // 5 min default
+  // 中文：5 min默认
 
   const startTime = Date.now();
   let consecutiveIdle = 0;
@@ -163,6 +188,7 @@ async function waitForL1Idle(
     const queues = scheduler.getQueueSizes();
 
     // Check per-session: buffered messages + conversation count
+    // 中文：每一会话：检查缓冲消息数+对话数量
     let totalBuffered = 0;
     let totalConversationCount = 0;
     for (const key of sessionKeys) {
@@ -199,6 +225,7 @@ async function waitForL1Idle(
 // ============================
 // Main execution function
 // ============================
+// 中文：主执行函数
 
 /**
  * Execute the seed pipeline: feed normalized input through L0 → L1.
@@ -209,6 +236,10 @@ async function waitForL1Idle(
  *
  * This is the core runtime called by `src/cli/commands/seed.ts` after
  * all input validation and user confirmation are complete.
+ * 中文：执行种子管道：将规范化输入通过L0 → L1传递。
+ * L2/L3运行器已连接，但其完成情况**不**等待——参见
+ * 模块级别的FIXME。在L1空闲后销毁管道，因此L2/L3可能在运行中被中断。
+ * 这是由`src/cli/commands/seed.ts`调用的核心运行时，在所有输入验证和用户确认完成后调用。
  */
 export async function executeSeed(
   input: NormalizedInput,
@@ -218,10 +249,12 @@ export async function executeSeed(
   const startTime = Date.now();
 
   // Track interrupt signal
+  // 中文：跟踪中断信号
   let interrupted = false;
   const onSigint = () => {
     if (interrupted) {
       // Second Ctrl+C — force exit
+      // 中文：第二次Ctrl+C — 强制退出
       logger.warn(`${TAG} Force exit (second Ctrl+C)`);
       process.exit(1);
     }
@@ -237,6 +270,7 @@ export async function executeSeed(
   try {
     // Create and start pipeline (returns both the pipeline instance and the
     // seed-optimized config so we don't need to parse config again)
+    // 中文：创建并启动管道（返回管道实例以及种子优化配置，以便我们无需再次解析配置）
     const seed = await createSeedPipeline(opts);
     pipeline = seed.pipeline;
     const seedCfg = seed.cfg;
@@ -248,6 +282,9 @@ export async function executeSeed(
     // does NOT filter out historical messages. In live mode Date.now()
     // prevents the first agent_end from dumping full session history,
     // but seed intentionally feeds all historical data.
+    // 中文：针对种子：使用0使得captureAtomically()中的冷启动防护
+    // 不过滤历史消息。在实时模式中Date.now()防止首次agent_end从输出完整会话历史记录，
+    // 但种子故意提供所有历史数据。
     const captureStartTimestamp = 0;
 
     // Process each session → each round
@@ -255,6 +292,8 @@ export async function executeSeed(
     // to finish before feeding more rounds. Without this pause the for-loop
     // would dump all rounds into L0 back-to-back and L1 would only run once
     // with the full batch (defeating the "every N" batching semantics).
+    // 中文：逐个处理每个会话→每轮对话
+    // 关键不变量：在每everyNConversations轮对话后，我们必须等待L1完成后再喂入更多轮次。如果没有这个暂停，for-loop将会连续将所有轮次倒入L0中，并且L1只会运行一次完整的批次（违背了“每隔N个”的分批语义）。
     const everyN = seedCfg.pipeline.everyNConversations;
 
     for (const session of input.sessions) {
@@ -271,6 +310,8 @@ export async function executeSeed(
         // Build messages in the format expected by performAutoCapture.
         // Field must be named "timestamp" (not "ts") because l0-recorder's
         // extractUserAssistantMessages reads m.timestamp for incremental filtering.
+        // 中文：按照performAutoCapture期望的格式构建消息。
+        // 字段必须命名为"timestamp"（而不是"ts"），因为l0-recorder的extractUserAssistantMessages通过读取m.timestamp来进行增量过滤。
         const messages = round.messages.map((m) => ({
           role: m.role,
           content: m.content,
@@ -300,6 +341,7 @@ export async function executeSeed(
         }
 
         // Report progress
+        // 中文：报告进度
         onProgress?.({
           currentRound: roundsProcessed,
           totalRounds: input.totalRounds,
@@ -310,6 +352,7 @@ export async function executeSeed(
         // After every N rounds, wait for the triggered L1 to finish before
         // feeding the next batch. This keeps L1 batches aligned with the
         // everyNConversations boundary instead of letting all rounds pile up.
+        // 中文：在每N轮对话后，等待触发的L1完成后再喂入下一批次。这保持了L1批次与everyNConversations边界对齐，而不是让所有轮次堆积在一起。
         const roundInSession = ri + 1; // 1-based
         if (roundInSession % everyN === 0 && !interrupted) {
           onProgress?.({
@@ -335,6 +378,8 @@ export async function executeSeed(
 
       // After all rounds for this session, wait for any residual L1 work
       // (handles the tail when total rounds is not a multiple of everyN)
+      // 中文：在本会话的所有轮次完成后，等待任何残留的L1工作完成
+      // （处理当总轮次数不是everyN的倍数时的尾部情况）
       if (!interrupted) {
         onProgress?.({
           currentRound: roundsProcessed,
@@ -355,6 +400,7 @@ export async function executeSeed(
     }
 
     // Final wait for all sessions
+    // 中文：最后等待所有会话完成
     if (!interrupted) {
       const allKeys = input.sessions.map((s) => s.sessionKey);
       logger.info(`${TAG} Final L1 idle wait for all sessions...`);
@@ -369,6 +415,7 @@ export async function executeSeed(
     process.removeListener("SIGINT", onSigint);
 
     // Graceful shutdown
+    // 中文：优雅地关闭
     if (pipeline) {
       try {
         await pipeline.destroy();
@@ -400,6 +447,7 @@ export async function executeSeed(
   }
 
   // Append seed info to manifest (non-fatal if it fails)
+  // 中文：将种子信息追加到清单中（如果失败则非致命）
   try {
     const manifest = readManifest(opts.outputDir);
     if (manifest) {
