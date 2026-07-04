@@ -47,3 +47,4 @@ test-offload-sessions.sh
 
 learning-doc
 .codegraph
+.DS_Store
