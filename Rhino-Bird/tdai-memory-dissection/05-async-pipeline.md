@@ -1,10 +1,10 @@
-# 05 Async Pipeline
+# 05 异步管线
 
-## Async Trigger Points
+## 异步触发点
 
-| Trigger | Code | Async mechanism | State used |
+| 触发源 | 代码位置 | 异步机制 | 使用的状态 |
 | --- | --- | --- | --- |
-| Deferred L0 embedding | `auto-capture.ts` | fire-and-forget promise registered in `TdaiCore.bgTasks` | L0 record ids, embedding service |
+| L0 embedding 延迟写入 | `auto-capture.ts` | fire-and-forget promise registered in `TdaiCore.bgTasks` | L0 record ids, embedding service |
 | Scheduler start | `tdai-core.ts:ensureSchedulerStarted()` | shared promise gate | checkpoint pipeline states |
 | L1 threshold | `pipeline-manager.ts:notifyConversation()` | `SerialQueue("L1")` | `conversation_count`, message buffer |
 | L1 idle timeout | `ManagedTimer` from `notifyConversation()` | resettable timer | message buffer |
@@ -12,10 +12,10 @@
 | L2 delay-after-L1 | `advanceL2Timer()` | downward-only timer | `l2LastRunTime`, min interval |
 | L2 max interval | `armL2MaxInterval()` | periodic timer | active window |
 | L3 persona | `triggerL3()` | global serial queue with pending flag | scene/profile checkpoint |
-| CLI Gateway watchdog | `runtime.py:ensure_watchdog_running()` | separate Python process | heartbeat + gateway pid |
+| CLI Gateway watchdog | `runtime.py:ensure_watchdog_running()` | 独立 Python 进程 | heartbeat + gateway pid |
 | Hermes watchdog | `MemoryTencentdbProvider._watchdog_loop()` | daemon thread | Gateway health |
 
-## Pipeline State Diagram
+## 管线状态图
 
 ```mermaid
 stateDiagram-v2
@@ -37,9 +37,9 @@ stateDiagram-v2
   L3Running --> Idle: persona generated or skipped
 ```
 
-## Checkpoint / Cursor Behavior
+## Checkpoint 与 cursor
 
-| Cursor/state | Purpose | Updated by |
+| Cursor 或状态 | 用途 | 更新位置 |
 | --- | --- | --- |
 | capture cursor | 避免重复捕获同一批 raw messages | `CheckpointManager.captureAtomically()` |
 | `last_l1_cursor` | L1 只处理新 L0 messages | `markL1ExtractionComplete()` |
@@ -49,20 +49,20 @@ stateDiagram-v2
 | `last_extraction_updated_time` | L2 增量读取 L1 records | `runL2()` |
 | `total_processed` / persona marker | L3 触发条件 | SceneExtractor / PersonaGenerator |
 
-## Retry, Idempotency, Shutdown
+## 重试、幂等与关闭
 
-| Concern | Implementation |
+| 关注点 | 实现 |
 | --- | --- |
-| concurrent scheduler start | `TdaiCore.schedulerStartPromise` 让并发 capture 等同一个 start。 |
-| duplicate L0 capture | `captureAtomically()` + position slice + timestamp cursor。 |
-| L1 failure | buffer 放回 `messageBuffers`，最多 5 次 retry。 |
-| L2 failure | 不丢状态，重新 arm max interval。 |
-| L3 concurrency | `l3Running` + `l3Pending`，全局串行。 |
-| per-session end | `flushSession(sessionKey)` 只 flush 当前 session。 |
-| process shutdown | `destroy()` flush pipeline，drain bg tasks，close store。 |
-| idle Gateway shutdown | CLI watchdog 读 heartbeat，超过 idle timeout 后关闭 hook 启动的 Gateway。 |
+| 并发 scheduler start | `TdaiCore.schedulerStartPromise` 让并发 capture 等同一个 start。 |
+| 重复 L0 capture | `captureAtomically()` + position slice + timestamp cursor。 |
+| L1 失败 | buffer 放回 `messageBuffers`，最多 5 次 retry。 |
+| L2 失败 | 不丢状态，重新 arm max interval。 |
+| L3 并发 | `l3Running` + `l3Pending`，全局串行。 |
+| 单 session end | `flushSession(sessionKey)` 只 flush 当前 session。 |
+| 进程关闭 | `destroy()` flush pipeline，drain bg tasks，close store。 |
+| Gateway 空闲关闭 | CLI watchdog 读 heartbeat，超过 idle timeout 后关闭 hook 启动的 Gateway。 |
 
-## Concrete Scenario Timing
+## 场景时间线
 
 ```mermaid
 sequenceDiagram
@@ -85,4 +85,3 @@ sequenceDiagram
   PM->>L3: triggerL3()
   L3->>PM: persona generated or skipped by trigger
 ```
-

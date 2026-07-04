@@ -1,6 +1,6 @@
-# 06 Config Control Plane
+# 06 配置控制面
 
-## Gateway Config Resolution
+## Gateway 配置解析
 
 ```mermaid
 flowchart LR
@@ -13,15 +13,15 @@ flowchart LR
   ParseMemory --> Core["TdaiCore config"]
 ```
 
-## Behavior-Changing Config
+## 影响行为的配置
 
-| Config key | Default | Controls |
+| 配置项 | 默认值 | 控制内容 |
 | --- | --- | --- |
-| `server.host` | `127.0.0.1` | Gateway bind address。 |
-| `server.port` | `8420` | Gateway HTTP port；Claude install 默认 8421。 |
+| `server.host` | `127.0.0.1` | Gateway 监听地址。 |
+| `server.port` | `8420` | Gateway HTTP 端口；Claude install 默认 8421。 |
 | `server.apiKey` / `TDAI_GATEWAY_API_KEY` | unset | 非 `/health` 路由 Bearer auth。 |
-| `data.baseDir` / `TDAI_DATA_DIR` | `~/.memory-tencentdb/memory-tdai` standalone fallback | L0/L1/L2/L3 落盘目录。 |
-| `llm.baseUrl/model/apiKey` | OpenAI defaults | Gateway standalone LLM runner。 |
+| `data.baseDir` / `TDAI_DATA_DIR` | `~/.memory-tencentdb/memory-tdai` 独立运行默认值 | L0/L1/L2/L3 落盘目录。 |
+| `llm.baseUrl/model/apiKey` | OpenAI 默认配置 | Gateway 独立运行时的 LLM runner。 |
 | `memory.capture.enabled` | `true` | 是否执行 L0 capture。 |
 | `memory.extraction.enabled` | `true` | 是否创建 scheduler 和 L1/L2/L3。 |
 | `memory.extraction.enableDedup` | `true` | L1 去重。 |
@@ -36,14 +36,14 @@ flowchart LR
 | `memory.recall.maxResults` | `5` | recall topK。 |
 | `memory.recall.timeoutMs` | `5000` | recall 超时后跳过注入。 |
 | `memory.embedding.provider` | `none` | 默认禁用向量；配置 openai 等启用。 |
-| `memory.embedding.dimensions` | `0` when disabled | VectorStore 维度。 |
-| `memory.storeBackend` | `sqlite` | SQLite or TCVDB。 |
+| `memory.embedding.dimensions` | 禁用时为 `0` | VectorStore 维度。 |
+| `memory.storeBackend` | `sqlite` | SQLite 或 TCVDB。 |
 | `TDAI_GATEWAY_AUTO_START` | CLI/MCP 默认为 false，安装脚本通常写 1 | Gateway 不健康时是否自动启动。 |
-| `TDAI_GATEWAY_IDLE_TIMEOUT_SECONDS` | `600` | CLI watchdog idle shutdown。 |
+| `TDAI_GATEWAY_IDLE_TIMEOUT_SECONDS` | `600` | CLI watchdog 空闲关闭阈值。 |
 
-## Why Code May Not Execute
+## 链路未执行的配置原因
 
-| Symptom | Config reason |
+| 现象 | 配置原因 |
 | --- | --- |
 | L0 没写 | `memory.capture.enabled=false` 或 hook 没触发/内容被过滤。 |
 | L1 没抽取 | `memory.extraction.enabled=false`、无 LLM runner、threshold/idle 未到。 |
@@ -52,12 +52,11 @@ flowchart LR
 | Gateway 不自动拉起 | `TDAI_GATEWAY_AUTO_START=0` 且无外部 Gateway。 |
 | HTTP 401 | Gateway 设置 apiKey，但 client env 未配置同一 token。 |
 
-## Platform Defaults
+## 平台默认值
 
-| Platform | Data dir | Port | Config writer |
+| 平台 | 数据目录 | 端口 | 配置写入方 |
 | --- | --- | --- | --- |
 | Codex | `~/.codex/tdai-memory/data` | `8420` | `scripts/install-codex.sh` |
 | Claude Code | `~/.claude/tdai-memory/data` | `8421` | `scripts/install-claude-code.sh` |
-| Hermes | Gateway `TDAI_DATA_DIR` or default | `8420` default | Hermes env / Gateway config |
+| Hermes | Gateway `TDAI_DATA_DIR` 或默认值 | 默认 `8420` | Hermes env / Gateway config |
 | OpenClaw | OpenClaw state dir + `memory-tdai` | none | OpenClaw plugin config |
-

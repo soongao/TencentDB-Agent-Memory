@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TDAI Memory 源码拆解 Blueprint</title>
+  <title>TDAI Memory 源码走查图</title>
   <style>
     :root {
       --bg: #f6f7f9;
@@ -355,7 +355,7 @@
   <header>
     <div class="topbar">
       <div>
-        <h1>TDAI Memory 源码拆解 Blueprint</h1>
+        <h1>TDAI Memory 源码走查图</h1>
         <div class="subtitle">从 Codex hook 捕获一轮对话，到 Gateway/Core 写 L0 并触发 L1/L2/L3，再通过 MCP 搜索召回。</div>
       </div>
       <div class="actions">
@@ -369,8 +369,8 @@
     <section class="panel network">
       <div class="network-head">
         <div>
-          <h2 id="boardTitle">全局蓝图</h2>
-          <div class="summary" id="boardSummary">选择一个 board 开始。</div>
+          <h2 id="boardTitle">全局链路图</h2>
+          <div class="summary" id="boardSummary">选择一个视图开始。</div>
         </div>
         <div class="legend">
           <span><i class="dot entry"></i>入口</span>
@@ -402,8 +402,8 @@
     <aside class="panel inspector" id="inspector">
       <div class="head">
         <div class="head-main">
-          <h2 id="inspectorTitle">Inspector</h2>
-          <div class="summary" id="inspectorSummary">点击任意节点查看源码、输入输出和失败分支。第二次点击已选节点会打开节点旁 Inspector。</div>
+          <h2 id="inspectorTitle">节点详情</h2>
+          <div class="summary" id="inspectorSummary">点击任意节点查看源码、输入输出和失败分支。第二次点击已选节点会打开节点旁详情面板。</div>
         </div>
         <button type="button" id="collapseBtn">收起</button>
       </div>
@@ -425,7 +425,7 @@
     const nodes = [
       {
         id: "hook",
-        label: "Hook event",
+        label: "Hook 事件",
         kind: "entry",
         x: 50,
         y: 100,
@@ -453,11 +453,11 @@
         output: { path: "/capture", body: { user_content: scenario.userPrompt, assistant_content: scenario.assistantContent } },
         reads: ["TDAI_GATEWAY_URL", "TDAI_GATEWAY_CONFIG", "TDAI_USER_ID"],
         writes: ["runtime/heartbeat.json"],
-        failure: "参数缺失或 Gateway unreachable -> CLI 返回 code=1。"
+        failure: "参数缺失或 Gateway 不可达 -> CLI 返回 code=1。"
       },
       {
         id: "supervisor",
-        label: "Ensure Gateway",
+        label: "确认 Gateway",
         kind: "logic",
         x: 510,
         y: 100,
@@ -466,14 +466,14 @@
         fn: "ensure_gateway_running",
         summary: "先调用 /health；不健康且允许 auto-start 时启动 Node Gateway。",
         input: { gatewayUrl: scenario.gatewayUrl, autoStart: true },
-        output: { status: "already-running or started" },
+        output: { status: "已运行或刚启动" },
         reads: ["GET /health", "TDAI_GATEWAY_AUTO_START", "TDAI_GATEWAY_CWD"],
         writes: ["runtime/gateway.pid", "logs/gateway.log"],
         failure: "auto-start=0 且 /health 失败 -> 抛出 RuntimeError。"
       },
       {
         id: "gateway",
-        label: "Gateway route",
+        label: "Gateway 路由",
         kind: "entry",
         x: 740,
         y: 100,
@@ -505,7 +505,7 @@
       },
       {
         id: "capture",
-        label: "Auto Capture",
+        label: "自动捕获",
         kind: "logic",
         x: 970,
         y: 270,
@@ -521,14 +521,14 @@
       },
       {
         id: "l0",
-        label: "L0 storage",
+        label: "L0 存储",
         kind: "state",
         x: 735,
         y: 315,
         file: "../../src/core/conversation/l0-recorder.ts",
         line: 89,
         fn: "recordConversation",
-        summary: "把 raw message 过滤、清洗后按每日 JSONL 追加，每行一条 L0 message。",
+        summary: "把原始 message 过滤、清洗后按每日 JSONL 追加，每行一条 L0 message。",
         input: { sessionKey: scenario.sessionKey, rawMessages: 2 },
         output: { jsonlLines: 2, fields: ["sessionKey", "sessionId", "recordedAt", "id", "role", "content", "timestamp"] },
         reads: ["raw hook messages", "afterTimestamp cursor"],
@@ -537,7 +537,7 @@
       },
       {
         id: "pipeline",
-        label: "Pipeline manager",
+        label: "Pipeline 管理器",
         kind: "core",
         x: 505,
         y: 315,
@@ -553,7 +553,7 @@
       },
       {
         id: "l1",
-        label: "L1 extraction",
+        label: "L1 抽取",
         kind: "logic",
         x: 280,
         y: 315,
@@ -569,7 +569,7 @@
       },
       {
         id: "l2",
-        label: "L2 scene",
+        label: "L2 场景",
         kind: "logic",
         x: 280,
         y: 500,
@@ -585,7 +585,7 @@
       },
       {
         id: "l3",
-        label: "L3 persona",
+        label: "L3 用户画像",
         kind: "logic",
         x: 510,
         y: 500,
@@ -593,7 +593,7 @@
         line: 583,
         fn: "createL3Runner",
         summary: "PersonaTrigger 判定需要时，读取 scene/profile 生成稳定用户画像。",
-        input: { reason: "L2 completed", profileFacts: ["中文", "结论优先", "不改原始代码"] },
+        input: { reason: "L2 已完成", profileFacts: ["中文", "结论优先", "不改原始代码"] },
         output: { file: "persona.md" },
         reads: ["scene_blocks", "checkpoint total_processed"],
         writes: ["persona.md", "checkpoint persona marker"],
@@ -601,7 +601,7 @@
       },
       {
         id: "mcp",
-        label: "MCP tool call",
+        label: "MCP tool 调用",
         kind: "entry",
         x: 740,
         y: 500,
@@ -610,14 +610,14 @@
         fn: "handle_message",
         summary: "Agent 调 tools/call 时，MCP 确保 Gateway 运行并转发到 /search/*。",
         input: { method: "tools/call", name: "tdai_memory_search", query: scenario.searchQuery },
-        output: { content: "Found N matching memories..." },
+        output: { content: "找到 N 条匹配记忆..." },
         reads: ["MCP JSON-RPC stdin", "Gateway health"],
         writes: [],
         failure: "Gateway 启动失败 -> JSON-RPC error；tool 内异常 -> isError content。"
       },
       {
         id: "search",
-        label: "Search memories",
+        label: "搜索记忆",
         kind: "logic",
         x: 970,
         y: 500,
@@ -626,14 +626,14 @@
         fn: "executeMemorySearch",
         summary: "对 L1 使用 FTS、embedding 或 hybrid RRF 搜索并格式化结果。",
         input: { query: scenario.searchQuery, limit: 5, strategy: "hybrid" },
-        output: { text: "Found matching memories", strategy: "hybrid|fts|embedding" },
+        output: { text: "找到匹配记忆", strategy: "hybrid|fts|embedding" },
         reads: ["VectorStore L1 FTS", "EmbeddingService", "VectorStore L1 vector"],
         writes: [],
         failure: "无 VectorStore 或无 FTS/Embedding -> empty + diagnostic message。"
       },
       {
         id: "config",
-        label: "Config plane",
+        label: "配置面",
         kind: "state",
         x: 50,
         y: 500,
@@ -645,20 +645,20 @@
         output: { capture: true, extraction: true, recall: true, strategy: "hybrid" },
         reads: ["tdai-gateway.yaml", "TDAI_* env"],
         writes: [],
-        failure: "配置文件 malformed 时 fallback env-only；apiKey 不一致会 401。"
+        failure: "配置文件格式错误时 fallback env-only；apiKey 不一致会 401。"
       },
       {
         id: "failure",
-        label: "Debug branch",
+        label: "排查分支",
         kind: "failure",
         x: 50,
         y: 690,
         file: "09-debug-playbook.md",
         line: 1,
-        fn: "Decision tree",
+        fn: "判断树",
         summary: "记忆不生效时按 entrypoint、config、Gateway、L0、pipeline、L1、search 顺序排查。",
         input: { symptom: "L0 exists but L1/L2/L3 missing" },
-        output: { nextCheck: "Gateway log [pipeline] and [l1] entries" },
+        output: { nextCheck: "Gateway log 中的 [pipeline] 和 [l1] 条目" },
         reads: ["hooks.jsonl", "gateway.log", "dataDir"],
         writes: [],
         failure: "跳过入口和数据目录确认会误判为 Core bug。"
@@ -689,21 +689,21 @@
       global: {
         label: "全局",
         title: "全局架构：平台适配层到核心引擎",
-        summary: "完整显示 hook/CLI/Gateway/Core/Pipeline/MCP 的连接关系。",
+        summary: "显示 hook/CLI/Gateway/Core/Pipeline/MCP 的连接关系。",
         nodes: nodes.map(n => n.id),
         defaultSelected: "core"
       },
       main: {
         label: "主链路",
         title: "主链路：一次 Codex turn 如何写入长期记忆",
-        summary: "从 hook event 到 /capture，再到 L0 和 pipeline。",
+        summary: "从 hook 事件到 /capture，再到 L0 和 pipeline。",
         nodes: ["hook", "cli", "supervisor", "gateway", "core", "capture", "l0", "pipeline"],
         edgeKinds: ["main", "state", "async"],
         defaultSelected: "hook"
       },
       data: {
         label: "数据",
-        title: "数据流：shape 如何变化",
+        title: "数据流：结构如何变化",
         summary: "关注 hook JSON、CLI args、HTTP body、CompletedTurn、L0、L1 records。",
         nodes: ["hook", "cli", "gateway", "core", "capture", "l0", "l1", "search"],
         edgeKinds: ["main", "state"],
@@ -712,7 +712,7 @@
       storage: {
         label: "存储",
         title: "存储图：L0/L1/L2/L3 和配置落点",
-        summary: "关注 durable/semi-durable state 的读写位置。",
+        summary: "关注持久化和半持久化状态的读写位置。",
         nodes: ["config", "l0", "l1", "l2", "l3", "search", "mcp"],
         edgeKinds: ["state", "async", "main"],
         defaultSelected: "l0"
@@ -728,7 +728,7 @@
       failure: {
         label: "失败",
         title: "失败排查：记忆没生效从哪里下手",
-        summary: "从 entrypoint 到 config、Gateway、L0、pipeline、L1、search 逐层排查。",
+        summary: "从入口、配置、Gateway、L0、pipeline、L1、search 逐层排查。",
         nodes: ["failure", "hook", "cli", "supervisor", "gateway", "l0", "pipeline", "l1", "search"],
         edgeKinds: ["failure", "main", "state", "async"],
         defaultSelected: "failure"
@@ -969,12 +969,12 @@
         ? `<a class="filelink" href="${escapeAttr(n.file)}">${escapeHtml(n.file)}:${n.line}</a>`
         : `<a class="filelink" href="${escapeAttr(n.file)}">${escapeHtml(n.file)}:${n.line}</a>`;
       return `
-        <div class="kv"><h3>Source</h3><div class="content">${fileLink}<br><code>${escapeHtml(n.fn)}</code></div></div>
-        <div class="kv"><h3>Input</h3><pre>${escapeHtml(JSON.stringify(n.input, null, compact ? 0 : 2))}</pre></div>
-        <div class="kv"><h3>Output</h3><pre>${escapeHtml(JSON.stringify(n.output, null, compact ? 0 : 2))}</pre></div>
-        <div class="kv"><h3>Reads</h3><ul>${n.reads.map(x => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>
-        <div class="kv"><h3>Writes</h3><ul>${n.writes.length ? n.writes.map(x => `<li>${escapeHtml(x)}</li>`).join("") : "<li>none</li>"}</ul></div>
-        <div class="kv"><h3>Failure branch</h3><div class="content">${escapeHtml(n.failure)}</div></div>
+        <div class="kv"><h3>源码</h3><div class="content">${fileLink}<br><code>${escapeHtml(n.fn)}</code></div></div>
+        <div class="kv"><h3>输入</h3><pre>${escapeHtml(JSON.stringify(n.input, null, compact ? 0 : 2))}</pre></div>
+        <div class="kv"><h3>输出</h3><pre>${escapeHtml(JSON.stringify(n.output, null, compact ? 0 : 2))}</pre></div>
+        <div class="kv"><h3>读取</h3><ul>${n.reads.map(x => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>
+        <div class="kv"><h3>写入</h3><ul>${n.writes.length ? n.writes.map(x => `<li>${escapeHtml(x)}</li>`).join("") : "<li>无</li>"}</ul></div>
+        <div class="kv"><h3>失败分支</h3><div class="content">${escapeHtml(n.failure)}</div></div>
       `;
     }
 

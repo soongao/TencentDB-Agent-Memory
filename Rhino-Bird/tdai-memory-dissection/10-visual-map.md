@@ -1,33 +1,33 @@
-# 10 Visual Map
+# 10 图索引
 
-This file is the diagram index for the dissection package.
+本文件汇总源码走查中用到的图。
 
-## Global Architecture
+## 全局架构
 
 ```mermaid
 flowchart TB
-  subgraph Platforms["Platforms"]
+  subgraph 平台["平台"]
     OpenClaw["OpenClaw\nindex.ts"]
     Hermes["Hermes\nMemoryProvider"]
     Codex["Codex plugin"]
     Claude["Claude Code plugin"]
   end
-  subgraph Shared["Shared packages"]
+  subgraph Shared["共享包"]
     MCP["tdai-memory-mcp"]
     CLI["tdai-memory-cli"]
     Hook["tdai-memory-hook"]
   end
-  subgraph GatewayLayer["Gateway layer"]
+  subgraph GatewayLayer["Gateway 层"]
     GW["TdaiGateway"]
     Standalone["StandaloneHostAdapter"]
   end
-  subgraph CoreLayer["Core engine"]
+  subgraph CoreLayer["Core 引擎"]
     Core["TdaiCore"]
     Recall["Auto Recall"]
     Capture["Auto Capture"]
     Pipeline["L1/L2/L3 Pipeline"]
   end
-  subgraph State["State"]
+  subgraph 状态["状态"]
     L0["L0 conversations"]
     L1["L1 records"]
     L2["L2 scene blocks"]
@@ -56,7 +56,7 @@ flowchart TB
   Recall --> L3
 ```
 
-## Code Anchor Map
+## 代码锚点图
 
 ```mermaid
 flowchart LR
@@ -73,20 +73,19 @@ flowchart LR
   J --> K["src/utils/pipeline-factory.ts"]
 ```
 
-## Minimum Reading Order
+## 阅读顺序
 
-| Order | File | Why |
+| 顺序 | 文件 | 目的 |
 | --- | --- | --- |
-| 1 | `src/core/tdai-core.ts` | Understand common facade. |
-| 2 | `src/gateway/server.ts` | Understand HTTP routes to Core. |
-| 3 | `src/core/hooks/auto-capture.ts` | Understand L0 capture and scheduler notify. |
-| 4 | `src/utils/pipeline-manager.ts` | Understand L1/L2/L3 timing and queues. |
-| 5 | `src/utils/pipeline-factory.ts` | Understand actual L1/L2/L3 runners. |
-| 6 | `packages/tdai-memory-mcp/tdai_memory_mcp/protocol.py` | Understand MCP tool path. |
-| 7 | `packages/tdai-memory-cli/tdai_memory_cli/hook.py` | Understand hook normalization. |
-| 8 | `index.ts` and `hermes-plugin/.../__init__.py` | Understand native platform adapters. |
+| 1 | `src/core/tdai-core.ts` | 理解公共 Core facade。 |
+| 2 | `src/gateway/server.ts` | 理解 HTTP routes 到 Core 的映射。 |
+| 3 | `src/core/hooks/auto-capture.ts` | 理解 L0 capture 和 scheduler notify。 |
+| 4 | `src/utils/pipeline-manager.ts` | 理解 L1/L2/L3 时序和队列。 |
+| 5 | `src/utils/pipeline-factory.ts` | 理解 L1/L2/L3 runner。 |
+| 6 | `packages/tdai-memory-mcp/tdai_memory_mcp/protocol.py` | 理解 MCP tool path。 |
+| 7 | `packages/tdai-memory-cli/tdai_memory_cli/hook.py` | 理解 hook normalization。 |
+| 8 | `index.ts` 和 `hermes-plugin/.../__init__.py` | 理解平台原生适配层。 |
 
-## HTML Walkthrough
+## HTML 走查页
 
-Open `interactive-debug-walkthrough.html` in this directory for a clickable blueprint using the same scenario values as `08-debug-walkthrough.md`.
-
+打开本目录的 `interactive-debug-walkthrough.html`，可以按 `08-debug-walkthrough.md` 中的场景值查看可点击链路图。
