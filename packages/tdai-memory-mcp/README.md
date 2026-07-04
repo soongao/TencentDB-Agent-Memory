@@ -56,7 +56,10 @@ tool argument session_key > TDAI_SESSION_KEY > generated mcp:<cwd-name>:<cwd-has
 The MCP server can auto-start the existing Gateway when `TDAI_GATEWAY_AUTO_START=1`.
 For Codex installs, `scripts/install-codex.sh` writes the default Gateway config
 to `~/.codex/tdai-memory/tdai-gateway.yaml` and stores memory files under
-`~/.codex/tdai-memory/data/`. For local Ollama-based testing:
+`~/.codex/tdai-memory/data/`. For Claude Code installs,
+`scripts/install-claude-code.sh` writes the default Gateway config to
+`~/.claude/tdai-memory/tdai-gateway.yaml` and stores memory files under
+`~/.claude/tdai-memory/data/`. For local Ollama-based testing:
 
 ```bash
 cd packages/tdai-memory-mcp
