@@ -276,7 +276,7 @@ export class TdaiCore {
       scheduler: this.scheduler,
       originalUserText: turn.userText,
       originalUserMessageCount: turn.originalUserMessageCount,
-      pluginStartTimestamp: turn.startedAt,
+      pluginStartTimestamp: turn.startedAt ?? Date.now(),
       vectorStore: this.vectorStore,
       embeddingService: this.embeddingService,
       bgTaskRegistry: this.bgTasks,
